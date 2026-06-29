@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.0
+
+- Added `-UploadSigningPublicKey` to upload the configured signing public key to GPG key servers with native PowerShell HTTP requests and print per-server upload results.
+- Added `-UploadSigningPublicKey -File <path>` to upload a public key directly from a file without updating secrets.
+- Changed publish-time GPG key handling to use the same HTTP upload flow and require every configured upload URL to accept the key before continuing to Gradle publish.
+- Changed `SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS` values to direct upload URLs, while migrating legacy host values to their known upload URLs during repair.
+- Changed `-Publish` to require `SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY` and stop when the key cannot be uploaded to every configured upload URL.
+
 ## 0.3.3
 
 - Replaced `const val` declarations in `publish.gradle.kts` with script `val` declarations for compatibility when applied from another Gradle script.

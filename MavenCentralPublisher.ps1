@@ -19,6 +19,13 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = "Publish")]
     [switch]$Publish,
 
+    [Parameter(Mandatory = $true, ParameterSetName = "UploadSigningPublicKey")]
+    [switch]$UploadSigningPublicKey,
+
+    [Parameter(ParameterSetName = "UploadSigningPublicKey")]
+    [ValidateNotNullOrEmpty()]
+    [string]$File,
+
     [Parameter(ParameterSetName = "Set")]
     [AllowNull()]
     [AllowEmptyString()]
@@ -70,15 +77,16 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ScriptVersion = "0.3.3"
+$ScriptVersion = "0.4.0"
 $ProvidedParameterNames = @($PSBoundParameters.Keys)
 
 $GpgKeyServersSecretName = "SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS"
 $DefaultGpgKeyServers = @(
-    "keyserver.ubuntu.com",
-    "pgp.mit.edu",
-    "keys.openpgp.org"
+    "http://keyserver.ubuntu.com:11371/pks/add",
+    "http://pgp.mit.edu:11371/pks/add",
+    "https://keys.openpgp.org/pks/add"
 )
+$KeyServerUploadTimeoutSeconds = 30
 
 $RequiredSecretNames = @(
     $GpgKeyServersSecretName,
@@ -100,6 +108,7 @@ Usage:
   .\MavenCentralPublisher.ps1 -List
   .\MavenCentralPublisher.ps1 -Edit [-Editor <editor>]
   .\MavenCentralPublisher.ps1 -Set [-JavaExecutable <value>] [-SigningPrivateKey <value>] [-SigningPublicKey <value>] [-Username <value>] [-Password <value>] [-PublishingType <automatic|user_managed>] [-SigningPassword <value>]
+  .\MavenCentralPublisher.ps1 -UploadSigningPublicKey [-File <path-to-public-key>]
   .\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand <path-to-gradlew>
   .\MavenCentralPublisher.ps1 -Help
   .\MavenCentralPublisher.ps1 -h
@@ -114,9 +123,9 @@ Modes:
   -Init
     Initializes DevSecretsManagerPs and creates these secrets when missing:
       SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS = [
-        "keyserver.ubuntu.com",
-        "pgp.mit.edu",
-        "keys.openpgp.org"
+        "http://keyserver.ubuntu.com:11371/pks/add",
+        "http://pgp.mit.edu:11371/pks/add",
+        "https://keys.openpgp.org/pks/add"
       ]
       SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE
       SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY
@@ -132,7 +141,7 @@ Modes:
   -Edit
     Opens the DevSecretsManagerPs secrets file in an editor.
     Uses the default editor from SecretsManager.ps1 unless -Editor is provided.
-    The GPG key servers value is validated and repaired before opening.
+    The GPG key server upload URLs value is validated and repaired before opening.
 
     Examples:
       .\MavenCentralPublisher.ps1 -Edit
@@ -145,7 +154,7 @@ Modes:
     -PublishingType stores SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE as automatic, user_managed, or an empty value.
     -PublishingType accepts null, empty, automatic, or user_managed.
     -SigningPrivateKey and -SigningPublicKey accept either literal key content or a path to an existing key file.
-    GPG key servers are intentionally not handled by -Set yet.
+    GPG key server upload URLs are intentionally not handled by -Set yet.
 
     Examples:
       .\MavenCentralPublisher.ps1 -Set -JavaExecutable "C:\Program Files\Eclipse Adoptium\jdk-17\bin\java.exe"
@@ -167,15 +176,26 @@ Modes:
       SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE
       SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY
       SONATYPE_MAVEN_CENTRAL_SIGNING_PASSWORD
-      SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY
       SONATYPE_MAVEN_CENTRAL_PASSWORD
       SONATYPE_MAVEN_CENTRAL_USERNAME
     SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE defaults to user_managed when empty.
-    SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS is validated and repaired before publishing.
+    SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS is validated and repaired as upload URLs before publishing.
+    SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY is required and must upload successfully to every configured upload URL before publishing.
 
     Examples:
       .\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand "..\MyJvmProject\gradlew.bat"
       .\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand "../MyJvmProject/gradlew"
+
+  -UploadSigningPublicKey
+    Uploads SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY to the configured GPG key server upload URLs.
+    Environment variables have priority over secrets when they are not null or empty.
+    When -File is provided, that file content is used as the public key for this upload only.
+    Each upload URL is attempted and reported independently.
+    The command fails when any configured upload URL does not accept the upload.
+
+    Example:
+      .\MavenCentralPublisher.ps1 -UploadSigningPublicKey
+      .\MavenCentralPublisher.ps1 -UploadSigningPublicKey -File ".\public-key.asc"
 
   -Version
     Prints the script version.
@@ -529,7 +549,7 @@ function Get-RequiredResolvedConfiguredValue {
 
     $value = Get-ResolvedConfiguredValue -Secrets $Secrets -Name $Name
     if ([string]::IsNullOrWhiteSpace($value)) {
-        throw "Required value '$Name' is missing, null, or empty. Configure it in an environment variable or secret before running -Publish."
+        throw "Required value '$Name' is missing, null, or empty. Configure it in an environment variable or secret before running this command."
     }
 
     return $value
@@ -618,132 +638,118 @@ function Resolve-ProjectGradleCommand {
     return $resolvedPath
 }
 
-function Get-GpgExecutablePath {
-    $gpgCommand = Get-Command gpg -ErrorAction SilentlyContinue
-    if ($null -ne $gpgCommand -and -not [string]::IsNullOrWhiteSpace($gpgCommand.Source)) {
-        if (Test-Path -LiteralPath $gpgCommand.Source -PathType Leaf) {
-            return $gpgCommand.Source
+function Get-HttpErrorMessage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$ErrorRecord
+    )
+
+    $response = $ErrorRecord.Exception.Response
+    if ($null -ne $response) {
+        $statusCode = try { [int]$response.StatusCode } catch { $null }
+        $statusDescription = try { [string]$response.StatusDescription } catch { "" }
+        if ($null -ne $statusCode) {
+            return "HTTP $statusCode $statusDescription".Trim()
         }
     }
 
-    $fallbackPaths = @(
-        "C:\Program Files\GnuPG\bin\gpg.exe",
-        "C:\Program Files\Git\usr\bin\gpg.exe"
-    )
-
-    foreach ($fallbackPath in $fallbackPaths) {
-        if (Test-Path -LiteralPath $fallbackPath -PathType Leaf) {
-            return $fallbackPath
-        }
+    if (-not [string]::IsNullOrWhiteSpace($ErrorRecord.Exception.Message)) {
+        return $ErrorRecord.Exception.Message
     }
 
-    throw "GPG was not found in PATH and no supported fallback location was found. Install GnuPG or make sure 'gpg' is available."
+    return [string]$ErrorRecord
 }
 
-function Get-PublicKeyFingerprint {
+function Invoke-KeyServerHttpUpload {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$GpgExecutablePath,
+        [string]$UploadUrl,
 
         [Parameter(Mandatory = $true)]
-        [string]$PublicKeyPath
+        [string]$SigningPublicKey
     )
 
-    $output = & $GpgExecutablePath --show-keys --with-colons --fingerprint $PublicKeyPath 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to read the public key fingerprint. GPG output: $($output -join [Environment]::NewLine)"
+    $response = Invoke-WebRequest -Uri $UploadUrl -Method Post -Body @{ keytext = $SigningPublicKey } -ContentType "application/x-www-form-urlencoded" -UseBasicParsing -TimeoutSec $KeyServerUploadTimeoutSeconds -ErrorAction Stop
+    return [PSCustomObject]@{
+        Uri = $UploadUrl
+        StatusCode = [int]$response.StatusCode
+        Message = "Upload request accepted."
     }
-
-    $fingerprint = $output |
-        Where-Object { $_ -like "fpr:*" } |
-        ForEach-Object { ($_ -split ":")[9] } |
-        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-        Select-Object -First 1
-
-    if ([string]::IsNullOrWhiteSpace($fingerprint)) {
-        throw "Could not extract a fingerprint from the public signing key."
-    }
-
-    return $fingerprint.Trim()
 }
 
-function Publish-PublicKeyToServers {
+function Resolve-GpgKeyServerUploadUrl {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$GpgExecutablePath,
+        [string]$Value
+    )
 
-        [Parameter(Mandatory = $true)]
-        [string]$PublicKeyPath,
+    $trimmedValue = $Value.Trim()
+    switch ($trimmedValue.ToLowerInvariant()) {
+        "keyserver.ubuntu.com" { return "http://keyserver.ubuntu.com:11371/pks/add" }
+        "pgp.mit.edu" { return "http://pgp.mit.edu:11371/pks/add" }
+        "keys.openpgp.org" { return "https://keys.openpgp.org/pks/add" }
+    }
 
+    $uri = $null
+    if (-not [System.Uri]::TryCreate($trimmedValue, [System.UriKind]::Absolute, [ref]$uri)) {
+        throw "$GpgKeyServersSecretName values must be absolute upload URLs. Current value: $Value"
+    }
+
+    if ($uri.Scheme -notin @("http", "https")) {
+        throw "$GpgKeyServersSecretName upload URLs must use http or https. Current value: $Value"
+    }
+
+    return $uri.AbsoluteUri
+}
+
+function Invoke-PublicKeyServerUpload {
+    param(
         [Parameter(Mandatory = $true)]
-        [string]$Fingerprint,
+        [string]$SigningPublicKey,
 
         [Parameter(Mandatory = $true)]
         [string[]]$KeyServers
     )
 
-    $temporaryHome = Join-Path ([System.IO.Path]::GetTempPath()) ("maven-central-gpg-" + [guid]::NewGuid().ToString("N"))
-    New-Item -ItemType Directory -Force -Path $temporaryHome | Out-Null
+    $results = @()
 
-    try {
-        $importOutput = & $GpgExecutablePath --homedir $temporaryHome --import $PublicKeyPath 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to import the public key into the temporary GPG home. GPG output: $($importOutput -join [Environment]::NewLine)"
-        }
-
-        foreach ($keyServer in $KeyServers) {
-            Write-Host "Uploading public key fingerprint $Fingerprint to $keyServer..."
-            $uploadOutput = & $GpgExecutablePath --homedir $temporaryHome --keyserver $keyServer --send-keys $Fingerprint 2>&1
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to upload the public key to '$keyServer'. GPG output: $($uploadOutput -join [Environment]::NewLine)"
-            }
-        }
-    }
-    finally {
-        if (Test-Path -LiteralPath $temporaryHome -PathType Container) {
-            Remove-Item -LiteralPath $temporaryHome -Recurse -Force
-        }
-    }
-}
-
-function Test-PublicKeyAvailabilityOnServers {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$GpgExecutablePath,
-
-        [Parameter(Mandatory = $true)]
-        [string]$Fingerprint,
-
-        [Parameter(Mandatory = $true)]
-        [string[]]$KeyServers
-    )
-
-    foreach ($keyServer in $KeyServers) {
-        $temporaryHome = Join-Path ([System.IO.Path]::GetTempPath()) ("maven-central-gpg-verify-" + [guid]::NewGuid().ToString("N"))
-        New-Item -ItemType Directory -Force -Path $temporaryHome | Out-Null
+    foreach ($keyServerUploadUrl in $KeyServers) {
+        Write-Host "Uploading signing public key to $keyServerUploadUrl..."
 
         try {
-            Write-Host "Verifying public key fingerprint $Fingerprint on $keyServer..."
-            $verifyOutput = & $GpgExecutablePath --homedir $temporaryHome --keyserver $keyServer --recv-keys $Fingerprint 2>&1
-            $verifyOutputText = $verifyOutput -join [Environment]::NewLine
-
-            $fingerprintLookup = & $GpgExecutablePath --homedir $temporaryHome --list-keys --with-colons $Fingerprint 2>&1
-            $resolvedFingerprint = $fingerprintLookup |
-                Where-Object { $_ -like "fpr:*" } |
-                ForEach-Object { ($_ -split ":")[9] } |
-                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-                Select-Object -First 1
-
-            if ([string]::IsNullOrWhiteSpace($resolvedFingerprint) -or
-                $resolvedFingerprint.Trim().ToUpperInvariant() -ne $Fingerprint.Trim().ToUpperInvariant()) {
-                throw "Key server '$keyServer' did not return the expected public key. GPG output: $verifyOutputText"
+            $uploadResult = Invoke-KeyServerHttpUpload -UploadUrl $keyServerUploadUrl -SigningPublicKey $SigningPublicKey
+            $results += [PSCustomObject]@{
+                UploadUrl = $keyServerUploadUrl
+                Uploaded = $true
+                StatusCode = $uploadResult.StatusCode
+                Uri = $uploadResult.Uri
+                Message = $uploadResult.Message
             }
         }
-        finally {
-            if (Test-Path -LiteralPath $temporaryHome -PathType Container) {
-                Remove-Item -LiteralPath $temporaryHome -Recurse -Force
+        catch {
+            $results += [PSCustomObject]@{
+                UploadUrl = $keyServerUploadUrl
+                Uploaded = $false
+                StatusCode = $null
+                Uri = ""
+                Message = Get-HttpErrorMessage -ErrorRecord $_
             }
         }
+    }
+
+    return $results
+}
+
+function Test-PublicKeyUploadResults {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Results
+    )
+
+    $failedResults = @($Results | Where-Object { -not $_.Uploaded })
+    if ($failedResults.Count -gt 0) {
+        $summary = ($failedResults | ForEach-Object { "$($_.UploadUrl): $($_.Message)" }) -join [Environment]::NewLine
+        throw "The signing public key could not be uploaded to every configured GPG key server upload URL. Failed uploads: $summary"
     }
 }
 
@@ -756,26 +762,14 @@ function Publish-MavenCentralPublicKey {
         [string[]]$KeyServers
     )
 
-    $temporaryKeyPath = Join-Path ([System.IO.Path]::GetTempPath()) ("maven-central-public-key-" + [guid]::NewGuid().ToString("N") + ".asc")
+    Write-Host "Key server upload URLs: $($KeyServers -join ', ')"
 
-    try {
-        $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-        [System.IO.File]::WriteAllText($temporaryKeyPath, $SigningPublicKey, $utf8NoBom)
-        $gpgExecutablePath = Get-GpgExecutablePath
-        $fingerprint = Get-PublicKeyFingerprint -GpgExecutablePath $gpgExecutablePath -PublicKeyPath $temporaryKeyPath
-
-        Write-Host "GPG executable: $gpgExecutablePath"
-        Write-Host "Public key fingerprint: $fingerprint"
-        Write-Host "Key servers: $($KeyServers -join ', ')"
-
-        Publish-PublicKeyToServers -GpgExecutablePath $gpgExecutablePath -PublicKeyPath $temporaryKeyPath -Fingerprint $fingerprint -KeyServers $KeyServers
-        Test-PublicKeyAvailabilityOnServers -GpgExecutablePath $gpgExecutablePath -Fingerprint $fingerprint -KeyServers $KeyServers
-    }
-    finally {
-        if (Test-Path -LiteralPath $temporaryKeyPath -PathType Leaf) {
-            Remove-Item -LiteralPath $temporaryKeyPath -Force
-        }
-    }
+    $results = Invoke-PublicKeyServerUpload -SigningPublicKey $SigningPublicKey -KeyServers $KeyServers
+    Write-Host ""
+    Write-Host "Signing public key upload results:"
+    $results | Format-Table -AutoSize | Out-Host
+    Test-PublicKeyUploadResults -Results $results
+    return $results
 }
 
 function Invoke-MavenCentralPublish {
@@ -806,7 +800,7 @@ function Invoke-MavenCentralPublish {
         throw "$GpgKeyServersSecretName must contain at least one key server."
     }
 
-    Publish-MavenCentralPublicKey -SigningPublicKey $signingPublicKey -KeyServers $keyServers
+    $null = Publish-MavenCentralPublicKey -SigningPublicKey $signingPublicKey -KeyServers $keyServers
 
     $env:SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS = $keyServers -join ";"
     $env:SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE = $javaExecutable
@@ -842,6 +836,33 @@ function Invoke-MavenCentralPublish {
     Write-Host "Maven Central publish completed."
 }
 
+function Invoke-SigningPublicKeyUpload {
+    Repair-MavenCentralSecrets | Out-Null
+    $secrets = Get-SecretsJson
+
+    if ($ProvidedParameterNames -contains "File") {
+        $resolvedFilePath = Resolve-FullPath -Path $File
+        if (-not (Test-Path -LiteralPath $resolvedFilePath -PathType Leaf)) {
+            throw "Signing public key file was not found: $resolvedFilePath"
+        }
+
+        $signingPublicKey = Get-Content -LiteralPath $resolvedFilePath -Raw
+        if ([string]::IsNullOrWhiteSpace($signingPublicKey)) {
+            throw "Signing public key file is empty: $resolvedFilePath"
+        }
+    }
+    else {
+        $signingPublicKey = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY"
+    }
+
+    $keyServers = @(Get-ResolvedGpgKeyServers -Secrets $secrets)
+    if ($keyServers.Count -eq 0) {
+        throw "$GpgKeyServersSecretName must contain at least one key server."
+    }
+
+    $null = Publish-MavenCentralPublicKey -SigningPublicKey $signingPublicKey -KeyServers $keyServers
+}
+
 function Write-JsonObject {
     param(
         [Parameter(Mandatory = $true)]
@@ -873,15 +894,17 @@ function ConvertTo-NormalizedGpgKeyServers {
                 continue
             }
 
-            if ($seen.Add($server)) {
-                $normalized.Add($server)
+            $uploadUrl = Resolve-GpgKeyServerUploadUrl -Value $server
+            if ($seen.Add($uploadUrl)) {
+                $normalized.Add($uploadUrl)
             }
         }
     }
 
     foreach ($defaultServer in $DefaultGpgKeyServers) {
-        if ($seen.Add($defaultServer)) {
-            $normalized.Add($defaultServer)
+        $uploadUrl = Resolve-GpgKeyServerUploadUrl -Value $defaultServer
+        if ($seen.Add($uploadUrl)) {
+            $normalized.Add($uploadUrl)
         }
     }
 
@@ -974,6 +997,11 @@ if ($Set) {
 
 if ($Publish) {
     Invoke-MavenCentralPublish
+    return
+}
+
+if ($UploadSigningPublicKey) {
+    Invoke-SigningPublicKeyUpload
     return
 }
 

@@ -2,7 +2,7 @@
 
 PowerShell tool for preparing and publishing JVM artifacts to Sonatype Maven Central using Gradle.
 
-The tool manages Maven Central credentials and signing configuration through `DevSecretsManagerPs`, exports the required environment variables for Gradle, verifies the signing public key against configured GPG key servers, and runs the reusable Gradle publishing task from `publish.gradle.kts`.
+The tool manages Maven Central credentials and signing configuration through `DevSecretsManagerPs`, exports the required environment variables for Gradle, uploads the signing public key to configured GPG key servers through native PowerShell HTTP requests, and runs the reusable Gradle publishing task from `publish.gradle.kts`.
 
 ## Repository Layout
 
@@ -52,6 +52,7 @@ The installation flow creates or updates the tool submodules, copies `Agent-JvmM
 .\MavenCentralPublisher.ps1 -List
 .\MavenCentralPublisher.ps1 -Edit [-Editor <editor>]
 .\MavenCentralPublisher.ps1 -Set [-JavaExecutable <value>] [-SigningPrivateKey <value>] [-SigningPublicKey <value>] [-Username <value>] [-Password <value>] [-PublishingType <automatic|user_managed>] [-SigningPassword <value>]
+.\MavenCentralPublisher.ps1 -UploadSigningPublicKey [-File <path-to-public-key>]
 .\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand <path-to-gradlew>
 .\MavenCentralPublisher.ps1 -Help
 .\MavenCentralPublisher.ps1 -Version
@@ -87,15 +88,15 @@ SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE
 SONATYPE_MAVEN_CENTRAL_USERNAME
 ```
 
-`SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS` is initialized and repaired with these default servers:
+`SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS` is initialized and repaired with these default upload URLs:
 
 ```text
-keyserver.ubuntu.com
-pgp.mit.edu
-keys.openpgp.org
+http://keyserver.ubuntu.com:11371/pks/add
+http://pgp.mit.edu:11371/pks/add
+https://keys.openpgp.org/pks/add
 ```
 
-The GPG server value is always validated as a non-empty string array. Empty strings and null values are removed, and the default servers are ensured.
+The GPG server value is always validated as a non-empty string array of absolute HTTP/HTTPS upload URLs. Empty strings and null values are removed, legacy host values are migrated to their upload URLs, and the default upload URLs are ensured.
 
 ## -List
 
@@ -162,6 +163,21 @@ Null values are stored as null. Empty strings are stored as empty secret values.
 
 `-SigningPrivateKey` and `-SigningPublicKey` accept either literal key content or a path to an existing key file. When the value is a valid file path, the file is read with `Get-Content -Raw` and the file content is stored as the secret value.
 
+## -UploadSigningPublicKey
+
+Uploads `SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY` to the configured GPG key server upload URLs.
+
+```powershell
+.\MavenCentralPublisher.ps1 -UploadSigningPublicKey
+.\MavenCentralPublisher.ps1 -UploadSigningPublicKey -File ".\public-key.asc"
+```
+
+The command uses the same secret resolution rules as publish: environment variables have priority over stored secrets when they are not null or empty.
+
+When `-File` is provided, the file content is used as the public key for that upload only. It does not update the stored secret.
+
+Each configured upload URL is attempted independently using native PowerShell HTTP requests. No `gpg` executable or external key-management tool is required. The command prints upload status in a table and fails when any configured URL does not accept the upload.
+
 ## -Publish
 
 Publishes a JVM artifact to Sonatype Maven Central through the Gradle wrapper command passed by `-ProjectGradleCommand`.
@@ -177,8 +193,8 @@ During publish, the tool:
 
 ```text
 validates secrets and environment variables
-repairs the GPG key server list
-publishes and verifies the signing public key on configured GPG key servers
+repairs the GPG key server upload URL list
+uploads the signing public key to configured GPG key server upload URLs using native PowerShell HTTP requests
 sets environment variables for Gradle using the same names as the secrets
 sets JAVA_HOME from SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE
 runs publishReleaseToCentralPortal through the provided Gradle wrapper command
@@ -196,6 +212,9 @@ SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY
 SONATYPE_MAVEN_CENTRAL_PASSWORD
 SONATYPE_MAVEN_CENTRAL_USERNAME
 ```
+
+`SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY` is required for publish and must upload successfully to every configured GPG key server upload URL before Gradle runs.
+
 
 `SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE` defaults to `user_managed` when empty.
 
@@ -218,7 +237,7 @@ Prints the script version.
 Current version:
 
 ```text
-0.3.3
+0.4.0
 ```
 
 ## Gradle Publishing Script

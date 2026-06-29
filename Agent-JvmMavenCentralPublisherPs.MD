@@ -17,6 +17,8 @@ Command usage documentation for this tool is in:
 ./Tools/JvmMavenCentralPublisherPs/README.md
 ```
 
+Always use the tool installed in the consuming repository root under `./Tools`. Do not use another local clone of `JvmMavenCentralPublisherPs` or `DevSecretsManagerPs` when working in a consuming repository.
+
 `MavenCentralPublisher.ps1` depends on `DevSecretsManagerPs` by relative path:
 
 ```powershell
@@ -329,6 +331,8 @@ When working in a repository that uses this tool:
 - Treat the current CWD as the consuming repository root.
 - Treat `Tools/DevSecretsManagerPs` as the required secrets manager tool path.
 - Treat `Tools/JvmMavenCentralPublisherPs` as the required JVM Maven Central publisher tool path.
+- Always run publisher commands from the consuming repository's installed tool path under `./Tools/JvmMavenCentralPublisherPs`.
+- Do not use a different local clone of this publisher tool while operating on a consuming repository.
 - Use `git submodule add` only when the submodule does not already exist.
 - If a submodule already exists in the required path, synchronize, initialize, and update it.
 - When `Tools/JvmMavenCentralPublisherPs` is added or updated, always execute the workflow through copying `Agent-JvmMavenCentralPublisherPs.MD` to the consuming repository root before continuing.
