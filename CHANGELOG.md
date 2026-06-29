@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.3.2
+
+- Fixed file path handling for `-SigningPrivateKey` and `-SigningPublicKey` so existing paths with spaces are read as file content instead of being stored as literal path values.
+
 ## 0.3.1
 
 - Clarified the consumer agent flow so tool updates always copy the newest root agent before continuing, and publish is skipped only when explicitly requested.

@@ -70,7 +70,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ScriptVersion = "0.3.1"
+$ScriptVersion = "0.3.2"
 $ProvidedParameterNames = @($PSBoundParameters.Keys)
 
 $GpgKeyServersSecretName = "SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS"
@@ -374,19 +374,46 @@ function Resolve-FileBackedSecretValue {
         [Parameter()]
         [AllowNull()]
         [AllowEmptyString()]
-        [object]$Value
+        [object]$Value,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ParameterName
     )
 
     if ($null -eq $Value -or $Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value)) {
         return $Value
     }
 
-    $candidatePath = [string]$Value
-    if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
+    $rawValue = [string]$Value
+    if ($rawValue.Contains("`n") -or
+        $rawValue.Contains("`r") -or
+        $rawValue.TrimStart().StartsWith("-----BEGIN ")) {
         return $Value
     }
 
-    return Get-Content -LiteralPath $candidatePath -Raw
+    $candidatePath = $rawValue.Trim()
+    if (($candidatePath.StartsWith('"') -and $candidatePath.EndsWith('"')) -or
+        ($candidatePath.StartsWith("'") -and $candidatePath.EndsWith("'"))) {
+        $candidatePath = $candidatePath.Substring(1, $candidatePath.Length - 2)
+    }
+
+    $candidatePath = [Environment]::ExpandEnvironmentVariables($candidatePath)
+    $resolvedPath = Resolve-Path -LiteralPath $candidatePath -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+
+    if ($null -ne $resolvedPath -and (Test-Path -LiteralPath $resolvedPath.ProviderPath -PathType Leaf)) {
+        return Get-Content -LiteralPath $resolvedPath.ProviderPath -Raw
+    }
+
+    $looksLikePath = $candidatePath -match '[\\/]' -or
+        $candidatePath -match '^[A-Za-z]:' -or
+        [System.IO.Path]::GetExtension($candidatePath) -ne [string]::Empty
+
+    if (-not $looksLikePath) {
+        return $Value
+    }
+
+    throw "$ParameterName looks like a file path, but the file was not found or is not readable: $candidatePath"
 }
 
 function Set-MavenCentralSecrets {
@@ -408,11 +435,11 @@ function Set-MavenCentralSecrets {
     }
 
     if ($ProvidedParameterNames -contains "SigningPrivateKey") {
-        $updates["SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY"] = Resolve-FileBackedSecretValue -Value $SigningPrivateKey
+        $updates["SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY"] = Resolve-FileBackedSecretValue -Value $SigningPrivateKey -ParameterName "-SigningPrivateKey"
     }
 
     if ($ProvidedParameterNames -contains "SigningPublicKey") {
-        $updates["SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY"] = Resolve-FileBackedSecretValue -Value $SigningPublicKey
+        $updates["SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY"] = Resolve-FileBackedSecretValue -Value $SigningPublicKey -ParameterName "-SigningPublicKey"
     }
 
     if ($ProvidedParameterNames -contains "Username") {
