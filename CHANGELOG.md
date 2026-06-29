@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.3.0
+
+- Added `-Set` support for reading `-SigningPrivateKey` and `-SigningPublicKey` from an existing file path.
+
 ## 0.2.2
 
 - Changed `publish.gradle.kts` so required Gradle properties, project metadata, and environment variables are resolved only when a Maven Central publish task is requested.

@@ -70,7 +70,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ScriptVersion = "0.2.2"
+$ScriptVersion = "0.3.0"
 $ProvidedParameterNames = @($PSBoundParameters.Keys)
 
 $GpgKeyServersSecretName = "SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS"
@@ -144,12 +144,15 @@ Modes:
     Empty strings are saved as empty secret values.
     -PublishingType stores SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE as automatic, user_managed, or an empty value.
     -PublishingType accepts null, empty, automatic, or user_managed.
+    -SigningPrivateKey and -SigningPublicKey accept either literal key content or a path to an existing key file.
     GPG key servers are intentionally not handled by -Set yet.
 
     Examples:
       .\MavenCentralPublisher.ps1 -Set -JavaExecutable "C:\Program Files\Eclipse Adoptium\jdk-17\bin\java.exe"
       .\MavenCentralPublisher.ps1 -Set -SigningPrivateKey "<private-key>"
+      .\MavenCentralPublisher.ps1 -Set -SigningPrivateKey ".\private-key.asc"
       .\MavenCentralPublisher.ps1 -Set -SigningPublicKey "<public-key>"
+      .\MavenCentralPublisher.ps1 -Set -SigningPublicKey ".\public-key.asc"
       .\MavenCentralPublisher.ps1 -Set -Username "<sonatype-token-username>"
       .\MavenCentralPublisher.ps1 -Set -Password "<sonatype-token-password>"
       .\MavenCentralPublisher.ps1 -Set -PublishingType automatic
@@ -366,6 +369,26 @@ function Set-ConfiguredSecret {
     Invoke-SecretsManager -Parameters $parameters | Out-Null
 }
 
+function Resolve-FileBackedSecretValue {
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [AllowEmptyString()]
+        [object]$Value
+    )
+
+    if ($null -eq $Value -or $Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value)) {
+        return $Value
+    }
+
+    $candidatePath = [string]$Value
+    if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
+        return $Value
+    }
+
+    return Get-Content -LiteralPath $candidatePath -Raw
+}
+
 function Set-MavenCentralSecrets {
     Repair-MavenCentralSecrets | Out-Null
 
@@ -385,11 +408,11 @@ function Set-MavenCentralSecrets {
     }
 
     if ($ProvidedParameterNames -contains "SigningPrivateKey") {
-        $updates["SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY"] = $SigningPrivateKey
+        $updates["SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY"] = Resolve-FileBackedSecretValue -Value $SigningPrivateKey
     }
 
     if ($ProvidedParameterNames -contains "SigningPublicKey") {
-        $updates["SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY"] = $SigningPublicKey
+        $updates["SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY"] = Resolve-FileBackedSecretValue -Value $SigningPublicKey
     }
 
     if ($ProvidedParameterNames -contains "Username") {

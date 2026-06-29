@@ -127,7 +127,9 @@ Updates only the values explicitly passed.
 ```powershell
 .\MavenCentralPublisher.ps1 -Set -JavaExecutable "C:\Program Files\Eclipse Adoptium\jdk-17\bin\java.exe"
 .\MavenCentralPublisher.ps1 -Set -SigningPrivateKey "<private-key>"
+.\MavenCentralPublisher.ps1 -Set -SigningPrivateKey ".\private-key.asc"
 .\MavenCentralPublisher.ps1 -Set -SigningPublicKey "<public-key>"
+.\MavenCentralPublisher.ps1 -Set -SigningPublicKey ".\public-key.asc"
 .\MavenCentralPublisher.ps1 -Set -SigningPassword "<signing-password>"
 .\MavenCentralPublisher.ps1 -Set -Username "<sonatype-token-username>"
 .\MavenCentralPublisher.ps1 -Set -Password "<sonatype-token-password>"
@@ -157,6 +159,8 @@ null
 ```
 
 Null values are stored as null. Empty strings are stored as empty secret values. `SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS` is intentionally not handled by `-Set`.
+
+`-SigningPrivateKey` and `-SigningPublicKey` accept either literal key content or a path to an existing key file. When the value is a valid file path, the file is read with `Get-Content -Raw` and the file content is stored as the secret value.
 
 ## -Publish
 
@@ -214,7 +218,7 @@ Prints the script version.
 Current version:
 
 ```text
-0.2.2
+0.3.0
 ```
 
 ## Gradle Publishing Script

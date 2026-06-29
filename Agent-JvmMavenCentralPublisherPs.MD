@@ -220,7 +220,9 @@ Use `-Set` to update publisher secrets instead of editing JSON manually:
 ```powershell
 .\Tools\JvmMavenCentralPublisherPs\MavenCentralPublisher.ps1 -Set -JavaExecutable "<path-to-java>"
 .\Tools\JvmMavenCentralPublisherPs\MavenCentralPublisher.ps1 -Set -SigningPrivateKey "<private-key>"
+.\Tools\JvmMavenCentralPublisherPs\MavenCentralPublisher.ps1 -Set -SigningPrivateKey ".\private-key.asc"
 .\Tools\JvmMavenCentralPublisherPs\MavenCentralPublisher.ps1 -Set -SigningPublicKey "<public-key>"
+.\Tools\JvmMavenCentralPublisherPs\MavenCentralPublisher.ps1 -Set -SigningPublicKey ".\public-key.asc"
 .\Tools\JvmMavenCentralPublisherPs\MavenCentralPublisher.ps1 -Set -SigningPassword "<signing-password>"
 .\Tools\JvmMavenCentralPublisherPs\MavenCentralPublisher.ps1 -Set -Username "<sonatype-token-username>"
 .\Tools\JvmMavenCentralPublisherPs\MavenCentralPublisher.ps1 -Set -Password "<sonatype-token-password>"
