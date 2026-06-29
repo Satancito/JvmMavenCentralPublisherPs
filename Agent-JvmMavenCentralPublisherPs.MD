@@ -93,6 +93,8 @@ git submodule update --init --recursive Tools/JvmMavenCentralPublisherPs
 git submodule update --remote --recursive Tools/JvmMavenCentralPublisherPs
 ```
 
+When this tool repo is added or updated, always continue through Step 4 and copy the tool's current `Agent-JvmMavenCentralPublisherPs.MD` into the consuming repository root before applying the remaining steps.
+
 ## Step 3: Apply DevSecretsManagerPs Instructions
 
 After `Tools/DevSecretsManagerPs` exists, apply the instructions from:
@@ -119,7 +121,7 @@ After copying it, read the root copy:
 Agent-JvmMavenCentralPublisherPs.MD
 ```
 
-Continue following the instructions from the root copy, but skip steps that have already been completed in the current run, such as adding or updating submodules and copying this agent file to the root.
+Continue following the instructions from the root copy. Skip only the steps that have already been completed in the current run, such as adding or updating submodules and copying this agent file to the root. The remaining steps must be executed from the copied root version so the consuming repository uses the newest workflow from the updated tool.
 
 ## Step 5: Copy Gradle Publishing Script
 
@@ -238,6 +240,10 @@ automatic
 
 ## Step 10: Publish
 
+This step is conditional.
+
+If the user explicitly requested installation, preparation, update, configuration, or any other workflow that says not to publish, do not run this step. In that case, skip only Step 10 and continue with the remaining sections such as staging and commit guidance.
+
 Read the relative Gradle wrapper command path from:
 
 ```text
@@ -325,10 +331,12 @@ When working in a repository that uses this tool:
 - Treat `Tools/JvmMavenCentralPublisherPs` as the required JVM Maven Central publisher tool path.
 - Use `git submodule add` only when the submodule does not already exist.
 - If a submodule already exists in the required path, synchronize, initialize, and update it.
+- When `Tools/JvmMavenCentralPublisherPs` is added or updated, always execute the workflow through copying `Agent-JvmMavenCentralPublisherPs.MD` to the consuming repository root before continuing.
 - Apply `Tools/DevSecretsManagerPs/Agent-DevSecretsManagerPs.MD` before using the publisher.
 - Keep updated copies of `Agent-DevSecretsManagerPs.MD` and `Agent-JvmMavenCentralPublisherPs.MD` in the consuming repository root when their source files changed.
-- After copying `Agent-JvmMavenCentralPublisherPs.MD` to the consuming repository root, read that root copy and continue from it, skipping steps already completed in the current run.
+- After copying `Agent-JvmMavenCentralPublisherPs.MD` to the consuming repository root, read that root copy and continue from it, skipping only steps already completed in the current run.
 - Keep `ProjectPath.txt` in the consuming repository root and read it before publishing.
+- Skip only the publish step when the user explicitly requested not to publish; still execute the preparation and staging guidance that applies.
 - Copy `publish.gradle.kts` into the directory that contains `gradlew` or `gradlew.bat` whenever the publisher tool repo registers changes.
 - Ensure the Gradle project's `build.gradle.kts` applies `publish.gradle.kts` exactly once.
 - Ensure the Gradle project's `build.gradle.kts` contains `group`, `version`, and `description`, creating only missing assignments with empty values.

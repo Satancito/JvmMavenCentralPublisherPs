@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.3.1
+
+- Clarified the consumer agent flow so tool updates always copy the newest root agent before continuing, and publish is skipped only when explicitly requested.
+
 ## 0.3.0
 
 - Added `-Set` support for reading `-SigningPrivateKey` and `-SigningPublicKey` from an existing file path.
