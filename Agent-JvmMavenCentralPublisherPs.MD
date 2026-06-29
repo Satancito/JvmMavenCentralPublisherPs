@@ -338,6 +338,8 @@ When working in a repository that uses this tool:
 - Keep `ProjectPath.txt` in the consuming repository root and read it before publishing.
 - Skip only the publish step when the user explicitly requested not to publish; still execute the preparation and staging guidance that applies.
 - Copy `publish.gradle.kts` into the directory that contains `gradlew` or `gradlew.bat` whenever the publisher tool repo registers changes.
+- Treat copied tool scripts as generated artifacts from `Tools/JvmMavenCentralPublisherPs`; do not locally fix or customize copied scripts in the consuming repository.
+- If a copied script has a problem, update `Tools/JvmMavenCentralPublisherPs` to a newer version and copy the regenerated script again.
 - Ensure the Gradle project's `build.gradle.kts` applies `publish.gradle.kts` exactly once.
 - Ensure the Gradle project's `build.gradle.kts` contains `group`, `version`, and `description`, creating only missing assignments with empty values.
 - Keep `gradle.properties` required Maven Central properties present, creating only missing keys with empty values.

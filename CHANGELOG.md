@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.3.3
+
+- Replaced `const val` declarations in `publish.gradle.kts` with script `val` declarations for compatibility when applied from another Gradle script.
+- Delayed Maven publication, signing, and upload task configuration in `publish.gradle.kts` until the `java` plugin is available.
+- Added agent guidance to avoid locally fixing copied scripts in consuming repositories because they are regenerated from tool versions.
+
 ## 0.3.2
 
 - Fixed file path handling for `-SigningPrivateKey` and `-SigningPublicKey` so existing paths with spaces are read as file content instead of being stored as literal path values.
