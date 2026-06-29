@@ -11,6 +11,12 @@ Tools/DevSecretsManagerPs
 Tools/JvmMavenCentralPublisherPs
 ```
 
+Command usage documentation for this tool is in:
+
+```text
+./Tools/JvmMavenCentralPublisherPs/README.md
+```
+
 `MavenCentralPublisher.ps1` depends on `DevSecretsManagerPs` by relative path:
 
 ```powershell
@@ -107,6 +113,14 @@ Tools/JvmMavenCentralPublisherPs/Agent-JvmMavenCentralPublisherPs.MD -> Agent-Jv
 
 The root copy gives future agents a predictable instruction file without searching inside the tool submodule.
 
+After copying it, read the root copy:
+
+```text
+Agent-JvmMavenCentralPublisherPs.MD
+```
+
+Continue following the instructions from the root copy, but skip steps that have already been completed in the current run, such as adding or updating submodules and copying this agent file to the root.
+
 ## Step 5: Copy Gradle Publishing Script
 
 Read `ProjectPath.txt` from the consuming repository root and resolve its value relative to the consuming repository root.
@@ -163,7 +177,7 @@ and fails if any required value is missing, blank, or `unspecified`.
 
 In the Gradle project directory, ensure `gradle.properties` exists.
 
-Verify these properties exist. If any are missing, add them with an empty value. Do not touch properties that already exist.
+Only these Gradle properties are required by `publish.gradle.kts`. Verify they exist. If any are missing, add them with an empty value. Do not touch properties that already exist.
 
 ```properties
 SONATYPE_MAVEN_CENTRAL_ARTIFACT_ID=
@@ -311,6 +325,7 @@ When working in a repository that uses this tool:
 - If a submodule already exists in the required path, synchronize, initialize, and update it.
 - Apply `Tools/DevSecretsManagerPs/Agent-DevSecretsManagerPs.MD` before using the publisher.
 - Keep updated copies of `Agent-DevSecretsManagerPs.MD` and `Agent-JvmMavenCentralPublisherPs.MD` in the consuming repository root when their source files changed.
+- After copying `Agent-JvmMavenCentralPublisherPs.MD` to the consuming repository root, read that root copy and continue from it, skipping steps already completed in the current run.
 - Keep `ProjectPath.txt` in the consuming repository root and read it before publishing.
 - Copy `publish.gradle.kts` into the directory that contains `gradlew` or `gradlew.bat` whenever the publisher tool repo registers changes.
 - Ensure the Gradle project's `build.gradle.kts` applies `publish.gradle.kts` exactly once.
