@@ -214,7 +214,7 @@ Prints the script version.
 Current version:
 
 ```text
-0.2.1
+0.2.2
 ```
 
 ## Gradle Publishing Script
@@ -252,7 +252,7 @@ SONATYPE_MAVEN_CENTRAL_SCM_CONNECTION=
 SONATYPE_MAVEN_CENTRAL_SCM_DEVELOPER_CONNECTION=
 ```
 
-Secrets are always read by `publish.gradle.kts` from environment variables provided by `MavenCentralPublisher.ps1`.
+Secrets are read by `publish.gradle.kts` from environment variables provided by `MavenCentralPublisher.ps1`, and the required Gradle properties, project metadata, and environment variables are resolved only when a Maven Central publish task is requested.
 
 ## Safety
 

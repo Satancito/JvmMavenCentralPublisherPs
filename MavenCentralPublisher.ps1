@@ -70,7 +70,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ScriptVersion = "0.2.1"
+$ScriptVersion = "0.2.2"
 $ProvidedParameterNames = @($PSBoundParameters.Keys)
 
 $GpgKeyServersSecretName = "SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS"

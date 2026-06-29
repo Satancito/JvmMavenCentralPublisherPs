@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.2.2
+
+- Changed `publish.gradle.kts` so required Gradle properties, project metadata, and environment variables are resolved only when a Maven Central publish task is requested.
+
 ## 0.2.1
 
 - Expanded `README.md` with complete command usage, flags, install guidance, Gradle publishing notes, and safety rules.

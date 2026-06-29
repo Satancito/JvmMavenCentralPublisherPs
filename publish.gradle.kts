@@ -90,27 +90,16 @@ fun requiredInceptionYear(value: String): String {
     return value
 }
 
-val projectGroupValue = requiredProjectValue("group", project.group)
-val projectVersionValue = requiredProjectValue("version", project.version)
-val projectNameValue = requiredProjectValue("name", project.name)
-val projectDescriptionValue = requiredProjectValue("description", project.description)
+fun isMavenCentralPublishRequested(): Boolean =
+    gradle.startParameter.taskNames.any {
+        val taskName = it.substringAfterLast(':')
+        taskName == _PUBLISH_RELEASE_TASK_NAME ||
+            taskName == _UPLOAD_RELEASE_TASK_NAME ||
+            taskName == "publish" ||
+            (taskName.startsWith("publish") && taskName.contains(_SONATYPE_CENTRAL_PORTAL_REPOSITORY_NAME.replaceFirstChar { char -> char.uppercase() }))
+    }
 
-val artifactIdValue = requiredArtifactId(requiredGradleProperty(_ARTIFACT_ID_PROPERTY))
-val pomUrlValue = requiredGradleProperty(_POM_URL_PROPERTY)
-val inceptionYearValue = requiredInceptionYear(requiredGradleProperty(_INCEPTION_YEAR_PROPERTY))
-val licenseNameValue = requiredGradleProperty(_LICENSE_NAME_PROPERTY)
-val licenseUrlValue = requiredGradleProperty(_LICENSE_URL_PROPERTY)
-val developerIdValue = requiredGradleProperty(_DEVELOPER_ID_PROPERTY)
-val developerNameValue = requiredGradleProperty(_DEVELOPER_NAME_PROPERTY)
-val scmUrlValue = requiredGradleProperty(_SCM_URL_PROPERTY)
-val scmConnectionValue = requiredGradleProperty(_SCM_CONNECTION_PROPERTY)
-val scmDeveloperConnectionValue = requiredGradleProperty(_SCM_DEVELOPER_CONNECTION_PROPERTY)
-
-val sonatypeCentralUsernameValue = requiredSecret(_USERNAME_ENV)
-val sonatypeCentralPasswordValue = requiredSecret(_PASSWORD_ENV)
-val sonatypeCentralPublishingTypeValue = requiredPublishingType(requiredSecret(_PUBLISHING_TYPE_ENV))
-val signingPrivateKeyValue = requiredSecret(_SIGNING_PRIVATE_KEY_ENV)
-val signingPasswordValue = requiredSecret(_SIGNING_PASSWORD_ENV)
+val mavenCentralPublishRequested = isMavenCentralPublishRequested()
 
 plugins.withId("java") {
     extensions.configure<JavaPluginExtension> {
@@ -119,116 +108,140 @@ plugins.withId("java") {
     }
 }
 
-extensions.configure<PublishingExtension> {
-    publications {
-        create<MavenPublication>(_MAVEN_PUBLICATION_NAME) {
-            groupId = projectGroupValue
-            artifactId = artifactIdValue
-            version = projectVersionValue
+if (mavenCentralPublishRequested) {
+    val projectGroupValue = requiredProjectValue("group", project.group)
+    val projectVersionValue = requiredProjectValue("version", project.version)
+    val projectNameValue = requiredProjectValue("name", project.name)
+    val projectDescriptionValue = requiredProjectValue("description", project.description)
 
-            val selectedComponentName = _MAVEN_PUBLICATION_COMPONENT_NAME
-            val selectedComponent = components.findByName(selectedComponentName)
-                ?: throw GradleException("Component '$selectedComponentName' was not found. Apply a JVM plugin before applying publish.gradle.kts.")
-            from(selectedComponent)
+    val artifactIdValue = requiredArtifactId(requiredGradleProperty(_ARTIFACT_ID_PROPERTY))
+    val pomUrlValue = requiredGradleProperty(_POM_URL_PROPERTY)
+    val inceptionYearValue = requiredInceptionYear(requiredGradleProperty(_INCEPTION_YEAR_PROPERTY))
+    val licenseNameValue = requiredGradleProperty(_LICENSE_NAME_PROPERTY)
+    val licenseUrlValue = requiredGradleProperty(_LICENSE_URL_PROPERTY)
+    val developerIdValue = requiredGradleProperty(_DEVELOPER_ID_PROPERTY)
+    val developerNameValue = requiredGradleProperty(_DEVELOPER_NAME_PROPERTY)
+    val scmUrlValue = requiredGradleProperty(_SCM_URL_PROPERTY)
+    val scmConnectionValue = requiredGradleProperty(_SCM_CONNECTION_PROPERTY)
+    val scmDeveloperConnectionValue = requiredGradleProperty(_SCM_DEVELOPER_CONNECTION_PROPERTY)
 
-            pom {
-                name.set(projectNameValue)
-                description.set(projectDescriptionValue)
-                url.set(pomUrlValue)
+    val sonatypeCentralUsernameValue = requiredSecret(_USERNAME_ENV)
+    val sonatypeCentralPasswordValue = requiredSecret(_PASSWORD_ENV)
+    val sonatypeCentralPublishingTypeValue = requiredPublishingType(requiredSecret(_PUBLISHING_TYPE_ENV))
+    val signingPrivateKeyValue = requiredSecret(_SIGNING_PRIVATE_KEY_ENV)
+    val signingPasswordValue = requiredSecret(_SIGNING_PASSWORD_ENV)
 
-                inceptionYear.set(inceptionYearValue)
+    extensions.configure<PublishingExtension> {
+        publications {
+            create<MavenPublication>(_MAVEN_PUBLICATION_NAME) {
+                groupId = projectGroupValue
+                artifactId = artifactIdValue
+                version = projectVersionValue
 
-                licenses {
-                    license {
-                        name.set(licenseNameValue)
-                        url.set(licenseUrlValue)
+                val selectedComponentName = _MAVEN_PUBLICATION_COMPONENT_NAME
+                val selectedComponent = components.findByName(selectedComponentName)
+                    ?: throw GradleException("Component '$selectedComponentName' was not found. Apply a JVM plugin before applying publish.gradle.kts.")
+                from(selectedComponent)
+
+                pom {
+                    name.set(projectNameValue)
+                    description.set(projectDescriptionValue)
+                    url.set(pomUrlValue)
+
+                    inceptionYear.set(inceptionYearValue)
+
+                    licenses {
+                        license {
+                            name.set(licenseNameValue)
+                            url.set(licenseUrlValue)
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            id.set(developerIdValue)
+                            name.set(developerNameValue)
+                        }
+                    }
+
+                    scm {
+                        url.set(scmUrlValue)
+                        connection.set(scmConnectionValue)
+                        developerConnection.set(scmDeveloperConnectionValue)
                     }
                 }
+            }
+        }
 
-                developers {
-                    developer {
-                        id.set(developerIdValue)
-                        name.set(developerNameValue)
-                    }
-                }
+        repositories {
+            maven {
+                name = _SONATYPE_CENTRAL_PORTAL_REPOSITORY_NAME
+                url = uri(_SONATYPE_CENTRAL_PORTAL_DEPLOY_URL)
 
-                scm {
-                    url.set(scmUrlValue)
-                    connection.set(scmConnectionValue)
-                    developerConnection.set(scmDeveloperConnectionValue)
+                credentials {
+                    username = sonatypeCentralUsernameValue
+                    password = sonatypeCentralPasswordValue
                 }
             }
         }
     }
 
-    repositories {
-        maven {
-            name = _SONATYPE_CENTRAL_PORTAL_REPOSITORY_NAME
-            url = uri(_SONATYPE_CENTRAL_PORTAL_DEPLOY_URL)
+    extensions.configure<SigningExtension> {
+        useInMemoryPgpKeys(signingPrivateKeyValue, signingPasswordValue)
 
-            credentials {
-                username = sonatypeCentralUsernameValue
-                password = sonatypeCentralPasswordValue
-            }
-        }
+        val publishing = extensions.getByType<PublishingExtension>()
+        val publication = publishing.publications.getByName(_MAVEN_PUBLICATION_NAME)
+        sign(publication)
     }
-}
 
-extensions.configure<SigningExtension> {
-    useInMemoryPgpKeys(signingPrivateKeyValue, signingPasswordValue)
-
-    val publishing = extensions.getByType<PublishingExtension>()
-    val publication = publishing.publications.getByName(_MAVEN_PUBLICATION_NAME)
-    sign(publication)
-}
-
-tasks.register(_UPLOAD_RELEASE_TASK_NAME) {
-    group = "publishing"
-    description = "Uploads the staged deployment from the OSSRH compatibility endpoint into the Sonatype Central Portal."
-    val publicationTaskName = _MAVEN_PUBLICATION_NAME.replaceFirstChar { it.uppercase() }
-    val repositoryTaskName = _SONATYPE_CENTRAL_PORTAL_REPOSITORY_NAME.replaceFirstChar { it.uppercase() }
-    dependsOn(
-        "publish${publicationTaskName}PublicationTo${repositoryTaskName}Repository"
-    )
-
-    doLast {
-        val namespace = projectGroupValue
-        val authorization = Base64.getEncoder().encodeToString(
-            "$sonatypeCentralUsernameValue:$sonatypeCentralPasswordValue".toByteArray()
+    tasks.register(_UPLOAD_RELEASE_TASK_NAME) {
+        group = "publishing"
+        description = "Uploads the staged deployment from the OSSRH compatibility endpoint into the Sonatype Central Portal."
+        val publicationTaskName = _MAVEN_PUBLICATION_NAME.replaceFirstChar { it.uppercase() }
+        val repositoryTaskName = _SONATYPE_CENTRAL_PORTAL_REPOSITORY_NAME.replaceFirstChar { it.uppercase() }
+        dependsOn(
+            "publish${publicationTaskName}PublicationTo${repositoryTaskName}Repository"
         )
-        val portalUploadUrl = _SONATYPE_CENTRAL_PORTAL_UPLOAD_URL.trimEnd('/')
-        val uploadUrl = URI.create(
-            "$portalUploadUrl/$namespace?publishing_type=$sonatypeCentralPublishingTypeValue"
-        ).toURL()
-        val connection = (uploadUrl.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Authorization", "Bearer $authorization")
-            doOutput = true
-            connectTimeout = 30_000
-            readTimeout = 30_000
-        }
 
-        val responseCode = connection.responseCode
-        val responseBody = runCatching {
-            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-            stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        }.getOrDefault("")
-
-        if (responseCode !in 200..299) {
-            val method = connection.requestMethod
-            val body = responseBody.ifBlank { "<empty>" }
-            throw GradleException(
-                "Central Portal upload failed. " +
-                    "method=$method, " +
-                    "url=$uploadUrl, " +
-                    "status=$responseCode, " +
-                    "namespace=$namespace, " +
-                    "publishingType=$sonatypeCentralPublishingTypeValue, " +
-                    "response=$body"
+        doLast {
+            val namespace = projectGroupValue
+            val authorization = Base64.getEncoder().encodeToString(
+                "$sonatypeCentralUsernameValue:$sonatypeCentralPasswordValue".toByteArray()
             )
-        }
+            val portalUploadUrl = _SONATYPE_CENTRAL_PORTAL_UPLOAD_URL.trimEnd('/')
+            val uploadUrl = URI.create(
+                "$portalUploadUrl/$namespace?publishing_type=$sonatypeCentralPublishingTypeValue"
+            ).toURL()
+            val connection = (uploadUrl.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Authorization", "Bearer $authorization")
+                doOutput = true
+                connectTimeout = 30_000
+                readTimeout = 30_000
+            }
 
-        logger.lifecycle("Central Portal upload accepted: $responseBody")
+            val responseCode = connection.responseCode
+            val responseBody = runCatching {
+                val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            }.getOrDefault("")
+
+            if (responseCode !in 200..299) {
+                val method = connection.requestMethod
+                val body = responseBody.ifBlank { "<empty>" }
+                throw GradleException(
+                    "Central Portal upload failed. " +
+                        "method=$method, " +
+                        "url=$uploadUrl, " +
+                        "status=$responseCode, " +
+                        "namespace=$namespace, " +
+                        "publishingType=$sonatypeCentralPublishingTypeValue, " +
+                        "response=$body"
+                )
+            }
+
+            logger.lifecycle("Central Portal upload accepted: $responseBody")
+        }
     }
 }
 
@@ -240,5 +253,7 @@ tasks.register(_PUBLISH_RELEASE_TASK_NAME) {
     if (testTask != null) {
         dependsOn(testTask)
     }
-    dependsOn(_UPLOAD_RELEASE_TASK_NAME)
+    if (mavenCentralPublishRequested) {
+        dependsOn(_UPLOAD_RELEASE_TASK_NAME)
+    }
 }
