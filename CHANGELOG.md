@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.0.1
+
 - Fixed secret listing integration to use the current `DevSecretsManagerPs` `-List` JSON contract instead of the removed `-Json` parameter.
 - Changed `-List` to return only Maven Central publisher secret properties instead of every value stored by `DevSecretsManagerPs`.
 
