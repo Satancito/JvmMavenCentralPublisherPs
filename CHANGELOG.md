@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.2.0
+
 - Changed `-Publish` to return a more explicit capturable JSON contract for agents, including `Success`, `Command`, `Stage`, `MavenCentralUploadAccepted`, `RequiresManualRelease`, `PublicKeyUpload`, and `Gradle` fields.
 
 ## 2.1.1

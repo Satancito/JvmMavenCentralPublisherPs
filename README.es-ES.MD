@@ -19,7 +19,7 @@ Version actual:
 Retorna:
 
 ```text
-"2.1.1"
+"2.2.0"
 ```
 
 `-Version` y `-Help` no inicializan secretos, no crean archivos y no publican artefactos.
@@ -346,7 +346,7 @@ Si publish falla, el comando retorna un objeto JSON de error con `Success = fals
 Retorna la version del script como string JSON.
 
 ```text
-"2.1.1"
+"2.2.0"
 ```
 
 ## Flujo Recomendado
