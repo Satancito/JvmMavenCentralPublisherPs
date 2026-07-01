@@ -236,6 +236,15 @@ function Write-JsonOutput {
     Write-Output ($Value | ConvertTo-Json -Depth 100)
 }
 
+function Write-Log {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    Write-Host $Message
+}
+
 function Get-ExceptionDataValue {
     param(
         [Parameter(Mandatory = $true)]
@@ -981,8 +990,10 @@ function Invoke-PublicKeyServerUpload {
     $results = @()
 
     foreach ($keyServerUploadUrl in $KeyServers) {
+        Write-Log "Uploading signing public key to GPG key server: $keyServerUploadUrl"
         try {
             $uploadResult = Invoke-KeyServerHttpUpload -UploadUrl $keyServerUploadUrl -SigningPublicKey $SigningPublicKey
+            Write-Log "Signing public key upload accepted by: $keyServerUploadUrl"
             $results += [PSCustomObject]@{
                 UploadUrl = $keyServerUploadUrl
                 Uploaded = $true
@@ -992,6 +1003,7 @@ function Invoke-PublicKeyServerUpload {
             }
         }
         catch {
+            Write-Log "Signing public key upload failed for: $keyServerUploadUrl"
             $results += [PSCustomObject]@{
                 UploadUrl = $keyServerUploadUrl
                 Uploaded = $false
@@ -1030,6 +1042,8 @@ function Publish-MavenCentralPublicKey {
 
     $results = Invoke-PublicKeyServerUpload -SigningPublicKey $SigningPublicKey -KeyServers $KeyServers
     Test-PublicKeyUploadResults -Results $results
+    $uploadedResults = @($results | Where-Object { $_.Uploaded })
+    Write-Log "Signing public key upload requirement satisfied: $($uploadedResults.Count)/$($KeyServers.Count) servers accepted the key."
     return $results
 }
 
@@ -1051,6 +1065,7 @@ function Invoke-GradlePublishCommand {
         $stderrPath = [System.IO.Path]::GetTempFileName()
 
         if ($commandName -eq "gradlew.bat") {
+            Write-Log "Executing Gradle task with Windows wrapper: $ProjectGradleCommand publishReleaseToCentralPortal --stacktrace"
             $process = Start-Process `
                 -FilePath $env:ComSpec `
                 -ArgumentList @("/d", "/c", "call", "`"$ProjectGradleCommand`"", "publishReleaseToCentralPortal", "--stacktrace") `
@@ -1062,6 +1077,7 @@ function Invoke-GradlePublishCommand {
                 -RedirectStandardError $stderrPath
         }
         else {
+            Write-Log "Executing Gradle task with wrapper: $ProjectGradleCommand publishReleaseToCentralPortal --stacktrace"
             $process = Start-Process `
                 -FilePath $ProjectGradleCommand `
                 -ArgumentList @("publishReleaseToCentralPortal", "--stacktrace") `
@@ -1109,14 +1125,18 @@ function Invoke-MavenCentralPublish {
     $resolvedProjectDirectory = $null
     $publishingType = $null
     try {
+        Write-Log "Starting Maven Central publish."
         Repair-MavenCentralSecrets | Out-Null
         $secrets = Get-SecretsJson
 
         $publishStage = "ResolveConfiguration"
         $resolvedProjectGradleCommand = Resolve-EffectiveProjectGradleCommand
         $resolvedProjectDirectory = Split-Path -Path $resolvedProjectGradleCommand -Parent
+        Write-Log "Resolved Gradle wrapper: $resolvedProjectGradleCommand"
+        Write-Log "Resolved Gradle project directory: $resolvedProjectDirectory"
         $javaExecutable = Resolve-JavaExecutable -JavaExecutable (Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE")
         $javaHome = Get-JavaHomeFromExecutable -JavaExecutablePath $javaExecutable
+        Write-Log "Resolved JAVA_HOME for Gradle child process."
         $signingPrivateKey = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY"
         $signingPassword = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PASSWORD"
         $signingPublicKey = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY"
@@ -1134,10 +1154,12 @@ function Invoke-MavenCentralPublish {
         }
 
         $publishStage = "PublicKeyUpload"
+        Write-Log "Uploading signing public key before Gradle publish."
         $publicKeyUploadResults = @(Publish-MavenCentralPublicKey -SigningPublicKey $signingPublicKey -KeyServers $keyServers)
         $successfulPublicKeyUploads = @($publicKeyUploadResults | Where-Object { $_.Uploaded }).Count
 
         $publishStage = "PrepareEnvironment"
+        Write-Log "Preparing isolated environment variables for Gradle child process."
         $gradleEnvironment = @{
             SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS = $keyServers -join ";"
             SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE = $javaExecutable
@@ -1174,6 +1196,8 @@ function Invoke-MavenCentralPublish {
         else {
             "Gradle publish task completed successfully. Maven Central Portal accepted the automatic publish request."
         }
+
+        Write-Log $message
 
         return [PSCustomObject]@{
             Success = $true

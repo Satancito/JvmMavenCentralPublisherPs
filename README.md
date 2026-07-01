@@ -287,6 +287,8 @@ When `-File` is provided, the file content is used as the public key for that up
 
 Each configured upload URL is attempted independently using native PowerShell HTTP requests. No `gpg` executable or external key-management tool is required. The command returns a JSON array with upload results and fails when fewer than 2 configured upload URLs accept the upload.
 
+Upload progress is printed with non-capturable host logs while the final structured result remains the JSON output.
+
 ## Publish
 
 ```powershell
@@ -333,6 +335,8 @@ SONATYPE_MAVEN_CENTRAL_USERNAME
 `SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE` is required for publish and must be `automatic` or `user_managed`. Null, empty, or invalid values fail before Gradle runs.
 
 The publish command returns a capturable JSON object. Agents should treat `Success = true`, `Published = true`, `MavenCentralUploadAccepted = true`, and process exit code `0` as a successful publish command execution.
+
+Publish progress, including signing public key upload attempts and the Gradle task being executed, is printed with non-capturable host logs. The final structured publish result remains the JSON output.
 
 The successful JSON includes `Command`, `Stage`, `Message`, `PublishingType`, `RequiresManualRelease`, resolved project paths, a `PublicKeyUpload` summary, a `Gradle` summary, and compatibility fields such as `GradleExitCode`, `PublicKeyUploadResults`, and `GradleOutput`.
 

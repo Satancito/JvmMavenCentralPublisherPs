@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added non-capturable host logs for signing public key upload attempts, Gradle task execution, and publish progress while keeping the final structured command result as JSON.
+
 - Changed publish validation to require `SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE` to be explicitly set to `automatic` or `user_managed`; null, empty, or invalid values now fail before Gradle runs.
 
 - Fixed publish environment handling so Maven Central and Java variables are passed only to the Gradle child process instead of remaining in the current PowerShell session.
