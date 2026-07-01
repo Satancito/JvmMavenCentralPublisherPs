@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.1.1
+
 - Changed GPG key server handling to explicitly validate the final upload URL list every time it is resolved, including non-empty HTTP/HTTPS URLs and the presence of all 3 default upload URLs.
 
 ## 2.1.0
