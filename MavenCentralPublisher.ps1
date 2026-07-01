@@ -190,6 +190,7 @@ Modes:
     SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE defaults to user_managed when empty.
     SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS is validated and repaired as upload URLs before publishing.
     SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY is required and must upload successfully to at least 2 configured upload URLs before publishing.
+    Returns capturable JSON with Success, Command, Stage, Published, MavenCentralUploadAccepted, RequiresManualRelease, PublicKeyUpload, and Gradle fields.
 
     Examples:
       .\MavenCentralPublisher.ps1 -Publish
@@ -230,6 +231,26 @@ function Write-JsonOutput {
     }
 
     Write-Output ($Value | ConvertTo-Json -Depth 100)
+}
+
+function Get-ExceptionDataValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Management.Automation.ErrorRecord]$ErrorRecord,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    if ($null -eq $ErrorRecord.Exception -or $null -eq $ErrorRecord.Exception.Data) {
+        return $null
+    }
+
+    if (-not $ErrorRecord.Exception.Data.Contains($Name)) {
+        return $null
+    }
+
+    return $ErrorRecord.Exception.Data[$Name]
 }
 
 function Resolve-FullPath {
@@ -999,70 +1020,129 @@ function Publish-MavenCentralPublicKey {
 }
 
 function Invoke-MavenCentralPublish {
-    Repair-MavenCentralSecrets | Out-Null
-    $secrets = Get-SecretsJson
-
-    $resolvedProjectGradleCommand = Resolve-EffectiveProjectGradleCommand
-    $resolvedProjectDirectory = Split-Path -Path $resolvedProjectGradleCommand -Parent
-    $javaExecutable = Resolve-JavaExecutable -JavaExecutable (Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE")
-    $javaHome = Get-JavaHomeFromExecutable -JavaExecutablePath $javaExecutable
-    $signingPrivateKey = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY"
-    $signingPassword = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PASSWORD"
-    $signingPublicKey = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY"
-    $sonatypeUsername = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_USERNAME"
-    $sonatypePassword = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_PASSWORD"
-    $publishingType = Get-ResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE"
-
-    if ([string]::IsNullOrWhiteSpace($publishingType)) {
-        $publishingType = "user_managed"
-    }
-
-    if ($publishingType -notin @("user_managed", "automatic")) {
-        throw "SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE must be user_managed or automatic. Current value: $publishingType"
-    }
-
-    $keyServers = @(Get-ResolvedGpgKeyServers -Secrets $secrets)
-    if ($keyServers.Count -eq 0) {
-        throw "$GpgKeyServersSecretName must contain at least one key server."
-    }
-
-    $publicKeyUploadResults = @(Publish-MavenCentralPublicKey -SigningPublicKey $signingPublicKey -KeyServers $keyServers)
-
-    $env:SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS = $keyServers -join ";"
-    $env:SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE = $javaExecutable
-    $env:SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY = $signingPrivateKey
-    $env:SONATYPE_MAVEN_CENTRAL_SIGNING_PASSWORD = $signingPassword
-    $env:SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY = $signingPublicKey
-    $env:SONATYPE_MAVEN_CENTRAL_USERNAME = $sonatypeUsername
-    $env:SONATYPE_MAVEN_CENTRAL_PASSWORD = $sonatypePassword
-    $env:SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE = $publishingType
-    $env:JAVA_HOME = $javaHome
-    $env:Path = "$javaHome\bin;$env:Path"
-
+    $publishStage = "Initialize"
     $gradleOutput = @()
-    $gradleExitCode = 0
-    Push-Location -LiteralPath $resolvedProjectDirectory
+    $gradleExitCode = $null
+    $resolvedProjectGradleCommand = $null
+    $resolvedProjectDirectory = $null
+    $publishingType = $null
     try {
-        $gradleOutput = @(& $resolvedProjectGradleCommand "publishReleaseToCentralPortal" "--stacktrace" 2>&1)
-        $gradleExitCode = $LASTEXITCODE
-        if ($gradleExitCode -ne 0) {
-            $gradleOutputText = ($gradleOutput | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
-            throw "Gradle publish failed with exit code $gradleExitCode. Output: $gradleOutputText"
+        Repair-MavenCentralSecrets | Out-Null
+        $secrets = Get-SecretsJson
+
+        $publishStage = "ResolveConfiguration"
+        $resolvedProjectGradleCommand = Resolve-EffectiveProjectGradleCommand
+        $resolvedProjectDirectory = Split-Path -Path $resolvedProjectGradleCommand -Parent
+        $javaExecutable = Resolve-JavaExecutable -JavaExecutable (Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE")
+        $javaHome = Get-JavaHomeFromExecutable -JavaExecutablePath $javaExecutable
+        $signingPrivateKey = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY"
+        $signingPassword = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PASSWORD"
+        $signingPublicKey = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY"
+        $sonatypeUsername = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_USERNAME"
+        $sonatypePassword = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_PASSWORD"
+        $publishingType = Get-ResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE"
+
+        if ([string]::IsNullOrWhiteSpace($publishingType)) {
+            $publishingType = "user_managed"
+        }
+
+        if ($publishingType -notin @("user_managed", "automatic")) {
+            throw "SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE must be user_managed or automatic. Current value: $publishingType"
+        }
+
+        $keyServers = @(Get-ResolvedGpgKeyServers -Secrets $secrets)
+        if ($keyServers.Count -eq 0) {
+            throw "$GpgKeyServersSecretName must contain at least one key server."
+        }
+
+        $publishStage = "PublicKeyUpload"
+        $publicKeyUploadResults = @(Publish-MavenCentralPublicKey -SigningPublicKey $signingPublicKey -KeyServers $keyServers)
+        $successfulPublicKeyUploads = @($publicKeyUploadResults | Where-Object { $_.Uploaded }).Count
+
+        $publishStage = "PrepareEnvironment"
+        $env:SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS = $keyServers -join ";"
+        $env:SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE = $javaExecutable
+        $env:SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY = $signingPrivateKey
+        $env:SONATYPE_MAVEN_CENTRAL_SIGNING_PASSWORD = $signingPassword
+        $env:SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY = $signingPublicKey
+        $env:SONATYPE_MAVEN_CENTRAL_USERNAME = $sonatypeUsername
+        $env:SONATYPE_MAVEN_CENTRAL_PASSWORD = $sonatypePassword
+        $env:SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE = $publishingType
+        $env:JAVA_HOME = $javaHome
+        $env:Path = "$javaHome\bin;$env:Path"
+
+        $publishStage = "GradlePublish"
+        $gradleExitCode = 0
+        Push-Location -LiteralPath $resolvedProjectDirectory
+        try {
+            $gradleOutput = @(& $resolvedProjectGradleCommand "publishReleaseToCentralPortal" "--stacktrace" 2>&1)
+            $gradleExitCode = $LASTEXITCODE
+            if ($gradleExitCode -ne 0) {
+                $gradleOutputText = ($gradleOutput | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+                throw "Gradle publish failed with exit code $gradleExitCode. Output: $gradleOutputText"
+            }
+        }
+        finally {
+            Pop-Location
+        }
+
+        $requiresManualRelease = $publishingType -eq "user_managed"
+        $message = if ($requiresManualRelease) {
+            "Gradle publish task completed successfully. The deployment was uploaded to Maven Central Portal and may require manual release."
+        }
+        else {
+            "Gradle publish task completed successfully. Maven Central Portal accepted the automatic publish request."
+        }
+
+        return [PSCustomObject]@{
+            Success = $true
+            Command = "Publish"
+            Stage = "Completed"
+            Published = $true
+            MavenCentralUploadAccepted = $true
+            RequiresManualRelease = $requiresManualRelease
+            Message = $message
+            PublishingType = $publishingType
+            ProjectDirectory = $resolvedProjectDirectory
+            ProjectGradleCommand = $resolvedProjectGradleCommand
+            JavaHome = $javaHome
+            PublicKeyUpload = [PSCustomObject]@{
+                Succeeded = $true
+                RequiredSuccessfulUploads = $MinimumSuccessfulKeyServerUploads
+                SuccessfulUploads = $successfulPublicKeyUploads
+                TotalServers = $keyServers.Count
+                Results = $publicKeyUploadResults
+            }
+            Gradle = [PSCustomObject]@{
+                Task = "publishReleaseToCentralPortal"
+                ExitCode = $gradleExitCode
+                Output = @($gradleOutput | ForEach-Object { [string]$_ })
+            }
+            GradleExitCode = $gradleExitCode
+            PublicKeyUploadResults = $publicKeyUploadResults
+            GradleOutput = @($gradleOutput | ForEach-Object { [string]$_ })
         }
     }
-    finally {
-        Pop-Location
-    }
-
-    return [PSCustomObject]@{
-        Published = $true
-        GradleExitCode = $gradleExitCode
-        ProjectDirectory = $resolvedProjectDirectory
-        ProjectGradleCommand = $resolvedProjectGradleCommand
-        JavaHome = $javaHome
-        PublishingType = $publishingType
-        PublicKeyUploadResults = $publicKeyUploadResults
-        GradleOutput = @($gradleOutput | ForEach-Object { [string]$_ })
+    catch {
+        $_.Exception.Data["Command"] = "Publish"
+        $_.Exception.Data["Stage"] = $publishStage
+        $_.Exception.Data["Published"] = $false
+        if ($null -ne $gradleExitCode) {
+            $_.Exception.Data["GradleExitCode"] = $gradleExitCode
+        }
+        if ($gradleOutput.Count -gt 0) {
+            $_.Exception.Data["GradleOutput"] = @($gradleOutput | ForEach-Object { [string]$_ })
+        }
+        if (-not [string]::IsNullOrWhiteSpace($publishingType)) {
+            $_.Exception.Data["PublishingType"] = $publishingType
+        }
+        if (-not [string]::IsNullOrWhiteSpace($resolvedProjectDirectory)) {
+            $_.Exception.Data["ProjectDirectory"] = $resolvedProjectDirectory
+        }
+        if (-not [string]::IsNullOrWhiteSpace($resolvedProjectGradleCommand)) {
+            $_.Exception.Data["ProjectGradleCommand"] = $resolvedProjectGradleCommand
+        }
+        throw
     }
 }
 
@@ -1342,9 +1422,54 @@ try {
     Write-JsonOutput -Value $result
 }
 catch {
-    Write-JsonOutput -Value ([ordered]@{
+    $errorResult = [ordered]@{
         Success = $false
         Error = Get-HttpErrorMessage -ErrorRecord $_
-    })
+    }
+
+    $command = Get-ExceptionDataValue -ErrorRecord $_ -Name "Command"
+    if (-not [string]::IsNullOrWhiteSpace($command)) {
+        $errorResult["Command"] = $command
+        if ($command -eq "Publish") {
+            $errorResult["MavenCentralUploadAccepted"] = $false
+        }
+    }
+
+    $stage = Get-ExceptionDataValue -ErrorRecord $_ -Name "Stage"
+    if (-not [string]::IsNullOrWhiteSpace($stage)) {
+        $errorResult["Stage"] = $stage
+    }
+
+    $published = Get-ExceptionDataValue -ErrorRecord $_ -Name "Published"
+    if ($null -ne $published) {
+        $errorResult["Published"] = $published
+    }
+
+    $publishingType = Get-ExceptionDataValue -ErrorRecord $_ -Name "PublishingType"
+    if (-not [string]::IsNullOrWhiteSpace($publishingType)) {
+        $errorResult["PublishingType"] = $publishingType
+        $errorResult["RequiresManualRelease"] = $publishingType -eq "user_managed"
+    }
+
+    $gradleExitCode = Get-ExceptionDataValue -ErrorRecord $_ -Name "GradleExitCode"
+    if ($null -ne $gradleExitCode) {
+        $errorResult["Gradle"] = [ordered]@{
+            Task = "publishReleaseToCentralPortal"
+            ExitCode = $gradleExitCode
+            Output = Get-ExceptionDataValue -ErrorRecord $_ -Name "GradleOutput"
+        }
+    }
+
+    $projectDirectory = Get-ExceptionDataValue -ErrorRecord $_ -Name "ProjectDirectory"
+    if (-not [string]::IsNullOrWhiteSpace($projectDirectory)) {
+        $errorResult["ProjectDirectory"] = $projectDirectory
+    }
+
+    $projectGradleCommand = Get-ExceptionDataValue -ErrorRecord $_ -Name "ProjectGradleCommand"
+    if (-not [string]::IsNullOrWhiteSpace($projectGradleCommand)) {
+        $errorResult["ProjectGradleCommand"] = $projectGradleCommand
+    }
+
+    Write-JsonOutput -Value $errorResult
     exit 1
 }

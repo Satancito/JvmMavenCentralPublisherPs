@@ -328,7 +328,13 @@ SONATYPE_MAVEN_CENTRAL_USERNAME
 
 `SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE` usa `user_managed` por default cuando esta vacia.
 
-El comando publish retorna un objeto JSON con `Published`, `GradleExitCode`, paths resueltos, resultados de subida de la public key y salida capturada de Gradle. Si Gradle falla, el comando retorna un objeto JSON de error y sale con codigo `1`.
+El comando publish retorna un objeto JSON capturable. Los agentes deben tratar `Success = true`, `Published = true`, `MavenCentralUploadAccepted = true`, y exit code `0` como una ejecucion exitosa del comando publish.
+
+El JSON exitoso incluye `Command`, `Stage`, `Message`, `PublishingType`, `RequiresManualRelease`, paths resueltos del proyecto, un resumen `PublicKeyUpload`, un resumen `Gradle`, y campos de compatibilidad como `GradleExitCode`, `PublicKeyUploadResults`, y `GradleOutput`.
+
+Si publish falla, el comando retorna un objeto JSON de error con `Success = false`, `Command = "Publish"`, el ultimo `Stage` completado o fallido, `Published = false`, y sale con codigo `1`.
+
+`RequiresManualRelease = true` significa que la tarea Gradle publish completo y el deployment fue subido a Maven Central Portal, pero el tipo de publicacion seleccionado puede requerir un release manual en Sonatype.
 
 ## Version
 
