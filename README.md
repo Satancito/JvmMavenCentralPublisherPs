@@ -9,7 +9,6 @@ The tool manages Maven Central credentials and signing configuration through `De
 ```text
 MavenCentralPublisher.ps1
 publish.gradle.kts
-Agent-JvmMavenCentralPublisherPs.MD
 Version.MD
 CHANGELOG.md
 ```
@@ -27,23 +26,41 @@ Tools/DevSecretsManagerPs
 Tools/JvmMavenCentralPublisherPs
 ```
 
-## Install In A Consuming Project
+## Install In A Consumer Project With ToolsManagerPs
 
-Use the agent guide as the installation flow. The raw GitHub URL is:
+Consumer projects can install this repository as a tool by using `ToolsManagerPs`.
 
-[Agent-JvmMavenCentralPublisherPs.MD](https://raw.githubusercontent.com/Satancito/JvmMavenCentralPublisherPs/main/Agent-JvmMavenCentralPublisherPs.MD)
+Download `ProjectManager.ps1` in the consumer project root:
 
-Prompt to use in the consuming repository:
-
-```text
-You are in the root of the consuming repository. Read and follow the workflow from:
-
-https://raw.githubusercontent.com/Satancito/JvmMavenCentralPublisherPs/main/Agent-JvmMavenCentralPublisherPs.MD
-
-Install and configure the JvmMavenCentralPublisherPs tool as described there, but do not run -Publish and do not publish any artifact. Stop after the project is prepared, required files are copied, and missing required properties are created with empty values.
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Satancito/ToolsManagerPs/main/ProjectManager.ps1" -OutFile "ProjectManager.ps1" -UseBasicParsing
 ```
 
-The installation flow creates or updates the tool submodules, copies `Agent-JvmMavenCentralPublisherPs.MD` to the consuming repository root, copies `publish.gradle.kts` to the Gradle wrapper directory, applies that Gradle script from `build.gradle.kts`, and ensures the required `gradle.properties` keys exist.
+Initialize the consumer project configuration:
+
+```powershell
+.\ProjectManager.ps1 -Init
+```
+
+Add `DevSecretsManagerPs` as a Git submodule tool:
+
+```powershell
+.\ProjectManager.ps1 -Tools Add -RepositoryName DevSecretsManagerPs -RepositoryUrl https://github.com/Satancito/DevSecretsManagerPs.git -Tag ""
+```
+
+Add `JvmMavenCentralPublisherPs` as a Git submodule tool:
+
+```powershell
+.\ProjectManager.ps1 -Tools Add -RepositoryName JvmMavenCentralPublisherPs -RepositoryUrl https://github.com/Satancito/JvmMavenCentralPublisherPs.git -Tag ""
+```
+
+`-Tag ""` stores `Tag` as `null`. A `null` tag means the tool is updated to the latest remote commit when `-Tools Update` runs.
+
+The `-Tag` value can be:
+
+- `null`, by passing `-Tag ""`, to track the latest remote commit.
+- A Git tag, to pin the tool to a released version.
+- A Git commit SHA, to pin the tool to an exact commit.
 
 ## Commands
 

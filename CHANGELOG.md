@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixed file reads to avoid `Get-Content -Raw`, improving compatibility with environments where that parameter is unavailable.
+- Added README instructions for installing the tool and `DevSecretsManagerPs` with `ToolsManagerPs`.
+- Removed the legacy installation guide file and its installation references.
+- Updated `Version.MD` to follow the `ToolsManagerPs` release workflow style, with an explicit Conventional Commits section, repository-only scope, and the existing changelog heading format.
+
 ## 0.4.0
 
 - Added `-UploadSigningPublicKey` to upload the configured signing public key to GPG key servers with native PowerShell HTTP requests and print per-server upload results.
@@ -14,7 +19,6 @@
 
 - Replaced `const val` declarations in `publish.gradle.kts` with script `val` declarations for compatibility when applied from another Gradle script.
 - Delayed Maven publication, signing, and upload task configuration in `publish.gradle.kts` until the `java` plugin is available.
-- Added agent guidance to avoid locally fixing copied scripts in consuming repositories because they are regenerated from tool versions.
 
 ## 0.3.2
 
@@ -22,7 +26,6 @@
 
 ## 0.3.1
 
-- Clarified the consumer agent flow so tool updates always copy the newest root agent before continuing, and publish is skipped only when explicitly requested.
 
 ## 0.3.0
 
@@ -36,9 +39,6 @@
 
 - Expanded `README.md` with complete command usage, flags, install guidance, Gradle publishing notes, and safety rules.
 - Added a raw GitHub agent-guide prompt for installing the tool in a consuming repository without running `-Publish`.
-- Clarified in `Agent-JvmMavenCentralPublisherPs.MD` that only the Gradle properties required by `publish.gradle.kts` should be created.
-- Added guidance to read the copied root agent file after installing it in a consuming repository.
-- Added `Agent-JvmMavenCentralPublisherPs.MD` guidance pointing command usage documentation to `./Tools/JvmMavenCentralPublisherPs/README.md`.
 
 ## 0.2.0
 
@@ -49,5 +49,4 @@
 - Added `-ProjectGradleCommand` for passing the consumer project's `gradlew` or `gradlew.bat` command directly.
 - Added reusable `publish.gradle.kts` for Maven Central publishing through Gradle.
 - Added required Gradle property validation, project metadata validation, artifact id validation, inception year validation, signing configuration, and Sonatype Central upload task wiring.
-- Added `Agent-JvmMavenCentralPublisherPs.MD` for installing and using the tool from a consuming repository.
 - Added `Version.MD` with release workflow guidance.

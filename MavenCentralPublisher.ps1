@@ -264,13 +264,22 @@ function Get-SecretsJson {
     return $values
 }
 
+function Read-TextFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    return [System.IO.File]::ReadAllText($Path)
+}
+
 function Read-JsonObjectAsOrderedHashtable {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path
     )
 
-    $json = Get-Content -LiteralPath $Path -Raw
+    $json = Read-TextFile -Path $Path
     $values = [ordered]@{}
 
     if ([string]::IsNullOrWhiteSpace($json)) {
@@ -422,7 +431,7 @@ function Resolve-FileBackedSecretValue {
         Select-Object -First 1
 
     if ($null -ne $resolvedPath -and (Test-Path -LiteralPath $resolvedPath.ProviderPath -PathType Leaf)) {
-        return Get-Content -LiteralPath $resolvedPath.ProviderPath -Raw
+        return Read-TextFile -Path $resolvedPath.ProviderPath
     }
 
     $looksLikePath = $candidatePath -match '[\\/]' -or
@@ -846,7 +855,7 @@ function Invoke-SigningPublicKeyUpload {
             throw "Signing public key file was not found: $resolvedFilePath"
         }
 
-        $signingPublicKey = Get-Content -LiteralPath $resolvedFilePath -Raw
+        $signingPublicKey = Read-TextFile -Path $resolvedFilePath
         if ([string]::IsNullOrWhiteSpace($signingPublicKey)) {
             throw "Signing public key file is empty: $resolvedFilePath"
         }
