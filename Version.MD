@@ -4,6 +4,20 @@ This file describes the release flow agents must follow when the user asks to re
 
 These instructions apply only to the `JvmMavenCentralPublisherPs` repository itself. They are not instructions for consuming repositories that install this repository as a tool.
 
+This repository includes both release workflow documents:
+
+- `Version.MD`: English release workflow.
+- `Version.es-ES.MD`: Spanish release workflow.
+
+Both files are part of this repository and must stay aligned when the release workflow changes.
+
+This repository also includes both README files:
+
+- `README.md`: English usage documentation.
+- `README.es-ES.MD`: Spanish usage documentation.
+
+Both README files are part of this repository and must stay aligned when usage, installation, commands, or behavior change.
+
 ## Version Source
 
 The script version is stored in `MavenCentralPublisher.ps1`:
@@ -21,7 +35,7 @@ The version command must return this value:
 Expected output shape:
 
 ```text
-1.0.0
+"1.0.0"
 ```
 
 ## Decide The Next Version
@@ -47,19 +61,36 @@ Choose the next version using SemVer:
 
 If the right bump is ambiguous, explain the options and recommend one before proceeding.
 
-## Prepare The Release
+## Release Order
 
-Before committing a release:
+Follow this order for every release:
 
 - Check `git status --short` and identify unrelated user changes.
 - Do not revert unrelated changes.
 - Do not clear, reset, overwrite, stage, or commit local secrets.
 - Validate that tracked files do not contain real Sonatype credentials, signing keys, signing passwords, or other secret values.
-- Update `$ScriptVersion` in `MavenCentralPublisher.ps1`.
-- Update `README.md` command documentation and current version references.
+- Determine which changes are included in the release.
+- Choose the next `X.Y.Z` version using SemVer.
+- Create one or more technical Conventional Commits for the actual changes, staging only the files that belong to each commit.
+- Prepare the final version bump by updating every file that must mention `X.Y.Z`, including `MavenCentralPublisher.ps1`, `CHANGELOG.md`, `README.md`, `README.es-ES.MD`, and any other affected documentation.
+- Stage only the final version bump files.
+- Create the final release commit with `chore(release): bump JvmMavenCentralPublisherPs to X.Y.Z`.
+- Confirm there are no pending tracked changes after the final release commit.
+- Create the `X.Y.Z` tag.
+- Push the branch.
+- Push the `X.Y.Z` tag.
+- Run the final checks.
+
+The tag must point to the final release commit, and the final release commit must leave the repository with no pending tracked changes.
+
+## Prepare The Release
+
+Before creating commits:
+
+- Update command documentation when behavior changes.
 - Keep the `README.md` section that explains how to install this tool in a consumer project with `ToolsManagerPs`.
-- Update `CHANGELOG.md` by moving `Unreleased` changes into a versioned section.
-- Update `Version.MD` if the release workflow changed.
+- Keep the `README.es-ES.MD` section that explains how to install this tool in a consumer project with `ToolsManagerPs`.
+- Update `Version.MD` and `Version.es-ES.MD` if the release workflow changed.
 - Run PowerShell parser validation for `MavenCentralPublisher.ps1`.
 - Run relevant smoke checks for commands that do not modify secrets or publish artifacts.
 
@@ -69,14 +100,14 @@ Secrets are machine-local values managed by `DevSecretsManagerPs`. They are not 
 
 For every release:
 
-- `README.md` must show valid commands.
-- `README.md` must document command flags, required parameters, behavior, and safety rules.
-- `README.md` must keep the consumer-project installation flow that uses `ToolsManagerPs`.
-- `README.md` must show the current version if it references a version.
+- `README.md` and `README.es-ES.MD` must show valid commands.
+- `README.md` and `README.es-ES.MD` must document command flags, required parameters, behavior, and safety rules.
+- `README.md` and `README.es-ES.MD` must keep the consumer-project installation flow that uses `ToolsManagerPs`.
+- `README.md` and `README.es-ES.MD` must show the current version if they reference a version.
 - `CHANGELOG.md` must contain a section for the released version using the repository format `## X.Y.Z`, without a date suffix.
-- `Version.MD` must remain repository-local and must describe the current release workflow.
+- `Version.MD` and `Version.es-ES.MD` must remain repository-local and must describe the current release workflow.
 
-Keep the README as the source of truth for tool usage, installation, and available commands.
+Keep `README.md` and `README.es-ES.MD` as the source of truth for tool usage, installation, and available commands.
 
 ## Validate Before Commit
 
@@ -132,13 +163,22 @@ Do not include personal data, secrets, credentials, tokens, certificates, privat
 
 Use one or more technical conventional commits before the final release commit. Stage only the files that belong to each commit.
 
+Do not include the final version bump in a technical commit unless the entire release consists only of the version bump. The version bump belongs in the final release commit.
+
 Examples for the current repository:
 
 ```powershell
 git status --short
+git add MavenCentralPublisher.ps1
 git commit -m "fix(publisher): repair text file reads"
+git add README.md
 git commit -m "docs(readme): document ToolsManagerPs installation"
-git commit -m "docs(release): align release workflow with ToolsManagerPs"
+git add README.es-ES.MD
+git commit -m "docs(readme): add Spanish usage documentation"
+git add Version.MD
+git commit -m "docs(release): align release workflow"
+git add Version.es-ES.MD
+git commit -m "docs(release): add Spanish release workflow"
 ```
 
 Commit messages must be detailed enough to understand what changed from the Git history.
@@ -154,9 +194,23 @@ chore(release): bump JvmMavenCentralPublisherPs to X.Y.Z
 Before this commit:
 
 - Ensure `MavenCentralPublisher.ps1` has `$ScriptVersion = "X.Y.Z"`.
-- Ensure `README.md` references `X.Y.Z` where relevant.
-- Ensure `CHANGELOG.md` has `## X.Y.Z`.
+- Ensure `README.md` and `README.es-ES.MD` reference `X.Y.Z` where relevant.
+- Ensure `CHANGELOG.md` moved the released items from `Unreleased` into `## X.Y.Z`.
 - Ensure no generated Gradle output, secret files, signing material, consumer project state, or local environment files are staged.
+
+Stage only the final bump files:
+
+```powershell
+git add MavenCentralPublisher.ps1 README.md README.es-ES.MD CHANGELOG.md Version.MD Version.es-ES.MD
+```
+
+Create the final release commit:
+
+```powershell
+git commit -m "chore(release): bump JvmMavenCentralPublisherPs to X.Y.Z"
+```
+
+After this commit, there must be no pending tracked changes. If anything remains pending, fix it with another appropriate commit before tagging.
 
 In normal releases, do not stage:
 
@@ -228,7 +282,7 @@ git ls-remote --tags origin X.Y.Z
 ## Safety Notes
 
 - Do not stage local project environment files, secret files, generated Gradle output, or signing material.
-- Do not stage consumer-generated `.gitmodules`, `Tools/`, `Project.json`, or project build output unless the user explicitly asks for that repository state.
+- Do not stage consumer-generated `.gitmodules`, `Tools/`, or project build output unless the user explicitly asks for that repository state.
 - Do not run destructive cleanup unless explicitly requested.
 - Do not create tags before the final release commit exists.
 - If tests or validation require network access, real key uploads, or a real Maven Central publish, ask for approval before running them.
@@ -239,7 +293,7 @@ A more automated release flow could later:
 
 - Read the latest tag.
 - Calculate the next SemVer version from conventional commits.
-- Update `MavenCentralPublisher.ps1`, `README.md`, and `CHANGELOG.md`.
+- Update `MavenCentralPublisher.ps1`, `README.md`, `README.es-ES.MD`, and `CHANGELOG.md`.
 - Run safe validations.
 - Create the release commit and tag.
 

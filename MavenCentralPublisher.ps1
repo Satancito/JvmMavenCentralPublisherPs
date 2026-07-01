@@ -31,10 +31,9 @@ param(
     [AllowEmptyString()]
     [object]$JavaExecutable,
 
-    [Parameter(Mandatory = $true, ParameterSetName = "Publish")]
+    [Parameter(ParameterSetName = "Publish")]
     [ValidateNotNullOrEmpty()]
     [string]$ProjectGradleCommand,
-
 
     [Parameter(ParameterSetName = "Set")]
     [AllowNull()]
@@ -77,8 +76,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 $ScriptVersion = "1.0.0"
 $ProvidedParameterNames = @($PSBoundParameters.Keys)
+$IsHelpRequest = $PSCmdlet.ParameterSetName -eq "Help"
 
 $GpgKeyServersSecretName = "SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS"
 $DefaultGpgKeyServers = @(
@@ -109,7 +110,7 @@ Usage:
   .\MavenCentralPublisher.ps1 -Edit [-Editor <editor>]
   .\MavenCentralPublisher.ps1 -Set [-JavaExecutable <value>] [-SigningPrivateKey <value>] [-SigningPublicKey <value>] [-Username <value>] [-Password <value>] [-PublishingType <automatic|user_managed>] [-SigningPassword <value>]
   .\MavenCentralPublisher.ps1 -UploadSigningPublicKey [-File <path-to-public-key>]
-  .\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand <path-to-gradlew>
+  .\MavenCentralPublisher.ps1 -Publish [-ProjectGradleCommand <path-to-gradlew>]
   .\MavenCentralPublisher.ps1 -Help
   .\MavenCentralPublisher.ps1 -h
   .\MavenCentralPublisher.ps1 -help
@@ -134,9 +135,10 @@ Modes:
       SONATYPE_MAVEN_CENTRAL_PASSWORD
       SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE
       SONATYPE_MAVEN_CENTRAL_USERNAME
+    Prints initialization progress for env.json, guid.json, environment id, and Maven Central secret states.
 
   -List
-    Lists only the Maven Central publisher secrets in table format.
+    Returns the complete secrets JSON after validation and repair.
 
   -Edit
     Opens the DevSecretsManagerPs secrets file in an editor.
@@ -171,6 +173,9 @@ Modes:
 
   -Publish
     Publishes a JVM artifact to Sonatype Maven Central using Gradle.
+    By default, the Gradle wrapper command is read from the Project property in the consumer root Project.json file.
+    Relative Project values are resolved from the consumer project root.
+    -ProjectGradleCommand can be used as an explicit override.
     Environment variables have priority over secrets when they are not null or empty.
     Every Maven Central publisher value must resolve to a non-empty value:
       SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE
@@ -183,6 +188,7 @@ Modes:
     SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY is required and must upload successfully to every configured upload URL before publishing.
 
     Examples:
+      .\MavenCentralPublisher.ps1 -Publish
       .\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand "..\MyJvmProject\gradlew.bat"
       .\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand "../MyJvmProject/gradlew"
 
@@ -198,14 +204,28 @@ Modes:
       .\MavenCentralPublisher.ps1 -UploadSigningPublicKey -File ".\public-key.asc"
 
   -Version
-    Prints the script version.
+    Returns the script version as a JSON string.
 "@
 
-    Write-Host $usage
+    return $usage
 }
 
 function Show-Version {
-    Write-Output $ScriptVersion
+    return $ScriptVersion
+}
+
+function Write-JsonOutput {
+    param(
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if ($null -eq $Value) {
+        Write-Output "null"
+        return
+    }
+
+    Write-Output ($Value | ConvertTo-Json -Depth 100)
 }
 
 function Resolve-FullPath {
@@ -233,6 +253,32 @@ function Resolve-SecretsManagerPath {
     return $resolvedPath
 }
 
+function Get-SecretsManagerDirectory {
+    return Split-Path -Path (Resolve-SecretsManagerPath) -Parent
+}
+
+function Get-SecretsManagerEnvFilePath {
+    return Join-Path -Path (Get-SecretsManagerDirectory) -ChildPath "env.json"
+}
+
+function Get-SecretsManagerSecretsDirectory {
+    $homeDirectory = $HOME
+    if ([string]::IsNullOrWhiteSpace($homeDirectory)) {
+        $homeDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    }
+
+    return Join-Path -Path $homeDirectory -ChildPath ".devsecretsmanager"
+}
+
+function Get-SecretsManagerSecretsFilePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Id
+    )
+
+    return Join-Path -Path (Get-SecretsManagerSecretsDirectory) -ChildPath "$Id.json"
+}
+
 function Invoke-SecretsManager {
     param(
         [Parameter(Mandatory = $true)]
@@ -245,6 +291,20 @@ function Invoke-SecretsManager {
     if (-not $?) {
         throw "SecretsManager.ps1 failed."
     }
+}
+
+function ConvertFrom-JsonLines {
+    param(
+        [AllowNull()]
+        [object]$JsonLines
+    )
+
+    $json = ($JsonLines | Out-String).Trim()
+    if ([string]::IsNullOrWhiteSpace($json)) {
+        return $null
+    }
+
+    return ConvertFrom-Json -InputObject $json -ErrorAction Stop
 }
 
 function Get-SecretsJson {
@@ -294,85 +354,89 @@ function Read-JsonObjectAsOrderedHashtable {
     return $values
 }
 
-function Convert-SecretValueToText {
-    param(
-        [object]$Value
-    )
-
-    if ($null -eq $Value) {
-        return "null"
-    }
-
-    if ($Value -is [array]) {
-        return $Value -join ", "
-    }
-
-    if ([string]::Empty -eq [string]$Value) {
-        return "empty"
-    }
-
-    return [string]$Value
-}
-
-function Write-MavenCentralSecretsTable {
+function Get-JsonObjectFileStatus {
     param(
         [Parameter(Mandatory = $true)]
-        [object[]]$Rows
+        [string]$Path
     )
 
-    $nameHeader = "Name"
-    $valueHeader = "Value"
-    $nameWidth = $nameHeader.Length
-    $valueWidth = $valueHeader.Length
-
-    foreach ($row in $Rows) {
-        $nameWidth = [Math]::Max($nameWidth, ([string]$row.Name).Length)
-        $valueWidth = [Math]::Max($valueWidth, (Convert-SecretValueToText -Value $row.Value).Length)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return "Created"
     }
 
-    Write-Host $nameHeader.PadRight($nameWidth) -ForegroundColor Magenta -NoNewline
-    Write-Host "  " -NoNewline
-    Write-Host $valueHeader.PadRight($valueWidth) -ForegroundColor Magenta
-    Write-Host ("-" * $nameWidth) -NoNewline
-    Write-Host "  " -NoNewline
-    Write-Host ("-" * $valueWidth)
+    try {
+        $json = Read-TextFile -Path $Path
+        if ([string]::IsNullOrWhiteSpace($json)) {
+            return "Regenerated"
+        }
 
-    foreach ($row in $Rows) {
-        $valueText = Convert-SecretValueToText -Value $row.Value
-        Write-Host ([string]$row.Name).PadRight($nameWidth) -ForegroundColor Blue -NoNewline
-        Write-Host "  " -NoNewline
+        $parsed = ConvertFrom-Json -InputObject $json -ErrorAction Stop
+        if ($parsed -isnot [PSCustomObject]) {
+            return "Regenerated"
+        }
 
-        if ($null -eq $row.Value -or [string]::Empty -eq [string]$row.Value) {
-            Write-Host $valueText.PadRight($valueWidth) -ForegroundColor Cyan
+        return "Existing"
+    }
+    catch {
+        return "Regenerated"
+    }
+}
+
+function Get-SecretsManagerEnvironmentStateBeforeInit {
+    $envFilePath = Get-SecretsManagerEnvFilePath
+    $envFileStatus = Get-JsonObjectFileStatus -Path $envFilePath
+    $id = $null
+
+    if ($envFileStatus -eq "Existing") {
+        $envValues = Read-JsonObjectAsOrderedHashtable -Path $envFilePath
+        $existingId = [string]$envValues["Id"]
+
+        if ([string]::IsNullOrWhiteSpace($existingId)) {
+            $envFileStatus = "IdAdded"
         }
         else {
-            Write-Host $valueText.PadRight($valueWidth)
+            $parsedGuid = [Guid]::Empty
+            if ([Guid]::TryParse($existingId, [ref]$parsedGuid)) {
+                $id = $parsedGuid.ToString()
+            }
+            else {
+                $envFileStatus = "Regenerated"
+            }
         }
+    }
+
+    $secretsFilePath = if ($null -ne $id) { Get-SecretsManagerSecretsFilePath -Id $id } else { $null }
+    $secretsFileStatus = if ($null -ne $secretsFilePath) { Get-JsonObjectFileStatus -Path $secretsFilePath } else { "Created" }
+
+    return [PSCustomObject]@{
+        EnvFilePath = $envFilePath
+        EnvFileStatus = $envFileStatus
+        Id = $id
+        SecretsFilePath = $secretsFilePath
+        SecretsFileStatus = $secretsFileStatus
     }
 }
 
 function Show-MavenCentralSecrets {
     Repair-MavenCentralSecrets | Out-Null
-    $secrets = Get-SecretsJson
-    $rows = foreach ($secretName in $RequiredSecretNames) {
-        [PSCustomObject]@{
-            Name = $secretName
-            Value = if ($secrets.Contains($secretName)) { $secrets[$secretName] } else { $null }
-        }
-    }
-
-    Write-MavenCentralSecretsTable -Rows @($rows)
+    return Get-SecretsJson
 }
 
 function Edit-MavenCentralSecrets {
     Repair-MavenCentralSecrets | Out-Null
 
     $editParameters = @{ Edit = $true }
+    $startedEditor = $null
     if (-not [string]::IsNullOrWhiteSpace($Editor)) {
         $editParameters["Editor"] = $Editor
+        $startedEditor = $Editor
     }
 
     Invoke-SecretsManager -Parameters $editParameters | Out-Null
+    return [ordered]@{
+        Started = $true
+        Editor = $startedEditor
+    }
 }
 
 function Set-ConfiguredSecret {
@@ -492,18 +556,14 @@ function Set-MavenCentralSecrets {
     }
 
     if ($updates.Count -eq 0) {
-        Write-Host "No Maven Central publisher secrets updated."
-        return
+        return $false
     }
 
     foreach ($entry in $updates.GetEnumerator()) {
         Set-ConfiguredSecret -Name $entry.Key -Value $entry.Value
     }
 
-    Write-Host "Maven Central publisher secrets updated:"
-    foreach ($secretName in $updates.Keys) {
-        Write-Host "  $secretName"
-    }
+    return $true
 }
 
 function Get-EnvironmentConfiguredValue {
@@ -647,6 +707,57 @@ function Resolve-ProjectGradleCommand {
     return $resolvedPath
 }
 
+function Get-ScriptDirectory {
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        return $PSScriptRoot
+    }
+
+    return Split-Path -Path $MyInvocation.MyCommand.Path -Parent
+}
+
+function Get-ConsumerProjectRoot {
+    $scriptDirectory = Get-ScriptDirectory
+    return [System.IO.Path]::GetFullPath((Join-Path -Path $scriptDirectory -ChildPath "..\.."))
+}
+
+function Get-ConsumerProjectJsonPath {
+    $consumerRoot = Get-ConsumerProjectRoot
+    return [System.IO.Path]::GetFullPath((Join-Path -Path $consumerRoot -ChildPath "Project.json"))
+}
+
+function Get-ProjectGradleCommandFromProjectJson {
+    $projectJsonPath = Get-ConsumerProjectJsonPath
+    if (-not (Test-Path -LiteralPath $projectJsonPath -PathType Leaf)) {
+        throw "Project.json was not found in the consumer project root: $projectJsonPath"
+    }
+
+    $projectValues = Read-JsonObjectAsOrderedHashtable -Path $projectJsonPath
+    if (-not $projectValues.Contains("Project")) {
+        throw "Project.json must contain a Project property with the path to gradlew or gradlew.bat: $projectJsonPath"
+    }
+
+    $projectValue = [string]$projectValues["Project"]
+    if ([string]::IsNullOrWhiteSpace($projectValue)) {
+        throw "Project.json Project property must not be null or empty: $projectJsonPath"
+    }
+
+    if ([System.IO.Path]::IsPathRooted($projectValue)) {
+        return Resolve-ProjectGradleCommand -ProjectGradleCommand $projectValue
+    }
+
+    $consumerRoot = Get-ConsumerProjectRoot
+    $projectGradleCommand = Join-Path -Path $consumerRoot -ChildPath $projectValue
+    return Resolve-ProjectGradleCommand -ProjectGradleCommand $projectGradleCommand
+}
+
+function Resolve-EffectiveProjectGradleCommand {
+    if ($ProvidedParameterNames -contains "ProjectGradleCommand") {
+        return Resolve-ProjectGradleCommand -ProjectGradleCommand $ProjectGradleCommand
+    }
+
+    return Get-ProjectGradleCommandFromProjectJson
+}
+
 function Get-HttpErrorMessage {
     param(
         [Parameter(Mandatory = $true)]
@@ -723,8 +834,6 @@ function Invoke-PublicKeyServerUpload {
     $results = @()
 
     foreach ($keyServerUploadUrl in $KeyServers) {
-        Write-Host "Uploading signing public key to $keyServerUploadUrl..."
-
         try {
             $uploadResult = Invoke-KeyServerHttpUpload -UploadUrl $keyServerUploadUrl -SigningPublicKey $SigningPublicKey
             $results += [PSCustomObject]@{
@@ -771,12 +880,7 @@ function Publish-MavenCentralPublicKey {
         [string[]]$KeyServers
     )
 
-    Write-Host "Key server upload URLs: $($KeyServers -join ', ')"
-
     $results = Invoke-PublicKeyServerUpload -SigningPublicKey $SigningPublicKey -KeyServers $KeyServers
-    Write-Host ""
-    Write-Host "Signing public key upload results:"
-    $results | Format-Table -AutoSize | Out-Host
     Test-PublicKeyUploadResults -Results $results
     return $results
 }
@@ -785,10 +889,10 @@ function Invoke-MavenCentralPublish {
     Repair-MavenCentralSecrets | Out-Null
     $secrets = Get-SecretsJson
 
+    $resolvedProjectGradleCommand = Resolve-EffectiveProjectGradleCommand
+    $resolvedProjectDirectory = Split-Path -Path $resolvedProjectGradleCommand -Parent
     $javaExecutable = Resolve-JavaExecutable -JavaExecutable (Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE")
     $javaHome = Get-JavaHomeFromExecutable -JavaExecutablePath $javaExecutable
-    $resolvedProjectGradleCommand = Resolve-ProjectGradleCommand -ProjectGradleCommand $ProjectGradleCommand
-    $resolvedProjectDirectory = Split-Path -Path $resolvedProjectGradleCommand -Parent
     $signingPrivateKey = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY"
     $signingPassword = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PASSWORD"
     $signingPublicKey = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY"
@@ -809,7 +913,7 @@ function Invoke-MavenCentralPublish {
         throw "$GpgKeyServersSecretName must contain at least one key server."
     }
 
-    $null = Publish-MavenCentralPublicKey -SigningPublicKey $signingPublicKey -KeyServers $keyServers
+    $publicKeyUploadResults = @(Publish-MavenCentralPublicKey -SigningPublicKey $signingPublicKey -KeyServers $keyServers)
 
     $env:SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS = $keyServers -join ";"
     $env:SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE = $javaExecutable
@@ -822,27 +926,31 @@ function Invoke-MavenCentralPublish {
     $env:JAVA_HOME = $javaHome
     $env:Path = "$javaHome\bin;$env:Path"
 
-    Write-Host "Publishing package environment loaded."
-    Write-Host "SONATYPE_MAVEN_CENTRAL_USERNAME: $sonatypeUsername"
-    Write-Host "SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE: $publishingType"
-    Write-Host "JAVA_HOME: $javaHome"
-    Write-Host "Project directory: $resolvedProjectDirectory"
-    Write-Host "Project Gradle command: $resolvedProjectGradleCommand"
-    Write-Host ""
-    Write-Host "Running publishReleaseToCentralPortal..."
-
+    $gradleOutput = @()
+    $gradleExitCode = 0
     Push-Location -LiteralPath $resolvedProjectDirectory
     try {
-        & $resolvedProjectGradleCommand "publishReleaseToCentralPortal" "--stacktrace"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Gradle publish failed with exit code $LASTEXITCODE."
+        $gradleOutput = @(& $resolvedProjectGradleCommand "publishReleaseToCentralPortal" "--stacktrace" 2>&1)
+        $gradleExitCode = $LASTEXITCODE
+        if ($gradleExitCode -ne 0) {
+            $gradleOutputText = ($gradleOutput | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+            throw "Gradle publish failed with exit code $gradleExitCode. Output: $gradleOutputText"
         }
     }
     finally {
         Pop-Location
     }
 
-    Write-Host "Maven Central publish completed."
+    return [PSCustomObject]@{
+        Published = $true
+        GradleExitCode = $gradleExitCode
+        ProjectDirectory = $resolvedProjectDirectory
+        ProjectGradleCommand = $resolvedProjectGradleCommand
+        JavaHome = $javaHome
+        PublishingType = $publishingType
+        PublicKeyUploadResults = $publicKeyUploadResults
+        GradleOutput = @($gradleOutput | ForEach-Object { [string]$_ })
+    }
 }
 
 function Invoke-SigningPublicKeyUpload {
@@ -869,7 +977,7 @@ function Invoke-SigningPublicKeyUpload {
         throw "$GpgKeyServersSecretName must contain at least one key server."
     }
 
-    $null = Publish-MavenCentralPublicKey -SigningPublicKey $signingPublicKey -KeyServers $keyServers
+    return @(Publish-MavenCentralPublicKey -SigningPublicKey $signingPublicKey -KeyServers $keyServers)
 }
 
 function Write-JsonObject {
@@ -953,7 +1061,7 @@ function Repair-GpgKeyServers {
 }
 
 function Repair-MavenCentralSecrets {
-    $secretsFilePath = Invoke-SecretsManager -Parameters @{ Init = $true } | Select-Object -Last 1
+    $secretsFilePath = ConvertFrom-JsonLines -JsonLines (Invoke-SecretsManager -Parameters @{ Init = $true } | Select-Object -Last 1)
     if ([string]::IsNullOrWhiteSpace($secretsFilePath)) {
         throw "SecretsManager.ps1 did not return the secrets file path."
     }
@@ -965,6 +1073,7 @@ function Repair-MavenCentralSecrets {
 }
 
 function Initialize-MavenCentralSecrets {
+    $environmentStateBeforeInit = Get-SecretsManagerEnvironmentStateBeforeInit
     $repairResult = Repair-MavenCentralSecrets
     $secretStates = [ordered]@{}
     $secretStates[$GpgKeyServersSecretName] = $repairResult.GpgKeyServersState
@@ -974,49 +1083,98 @@ function Initialize-MavenCentralSecrets {
             continue
         }
 
-        $created = Invoke-SecretsManager -Parameters @{ Add = $secretName }
+        $created = ConvertFrom-JsonLines -JsonLines (Invoke-SecretsManager -Parameters @{ Add = $secretName })
         $secretStates[$secretName] = if ($created) { "Created" } else { "Existing" }
     }
 
-    Write-Host "Maven Central publisher secrets initialized:"
-    foreach ($secretName in $RequiredSecretNames) {
+    $secretsFileStatus = $environmentStateBeforeInit.SecretsFileStatus
+    if ($null -ne $environmentStateBeforeInit.SecretsFilePath -and
+        $environmentStateBeforeInit.SecretsFilePath -ne $repairResult.SecretsFilePath) {
+        $secretsFileStatus = "Created"
+    }
+
+    Write-Host "Maven Central publisher initialization"
+    Write-Host "env.json: $($environmentStateBeforeInit.EnvFilePath) [$($environmentStateBeforeInit.EnvFileStatus)]"
+
+    if ($environmentStateBeforeInit.EnvFileStatus -eq "Created") {
+        Write-Host "env.json was created."
+    }
+    elseif ($environmentStateBeforeInit.EnvFileStatus -in @("Regenerated", "IdAdded")) {
+        Write-Host "env.json was corrected."
+    }
+
+    if ($environmentStateBeforeInit.EnvFileStatus -in @("Created", "Regenerated", "IdAdded")) {
+        Write-Host "A new environment id was created or assigned."
+    }
+
+    Write-Host "guid.json: $($repairResult.SecretsFilePath) [$secretsFileStatus]"
+    if ($secretsFileStatus -eq "Created") {
+        Write-Host "guid.json was created."
+    }
+    elseif ($secretsFileStatus -eq "Regenerated") {
+        Write-Host "guid.json was corrected."
+    }
+
+    Write-Host "Maven Central publisher secrets:"
+    foreach ($secretName in $secretStates.Keys) {
         Write-Host "  $secretName [$($secretStates[$secretName])]"
     }
 }
 
-if ($Init) {
-    Initialize-MavenCentralSecrets
-    return
+function Invoke-Main {
+    if ($IsHelpRequest) {
+        return Show-Usage
+    }
+
+    if ($Init) {
+        Initialize-MavenCentralSecrets
+        return
+    }
+
+    if ($List) {
+        return Show-MavenCentralSecrets
+    }
+
+    if ($Edit) {
+        return Edit-MavenCentralSecrets
+    }
+
+    if ($Set) {
+        return Set-MavenCentralSecrets
+    }
+
+    if ($Publish) {
+        return Invoke-MavenCentralPublish
+    }
+
+    if ($UploadSigningPublicKey) {
+        return Invoke-SigningPublicKeyUpload
+    }
+
+    if ($Version) {
+        return Show-Version
+    }
+
+    return Show-Usage
 }
 
-if ($List) {
-    Show-MavenCentralSecrets
-    return
-}
+try {
+    $result = Invoke-Main
+    if ($IsHelpRequest) {
+        Write-Output $result
+        return
+    }
 
-if ($Edit) {
-    Edit-MavenCentralSecrets
-    return
-}
+    if ($Init) {
+        return
+    }
 
-if ($Set) {
-    Set-MavenCentralSecrets
-    return
+    Write-JsonOutput -Value $result
 }
-
-if ($Publish) {
-    Invoke-MavenCentralPublish
-    return
+catch {
+    Write-JsonOutput -Value ([ordered]@{
+        Success = $false
+        Error = Get-HttpErrorMessage -ErrorRecord $_
+    })
+    exit 1
 }
-
-if ($UploadSigningPublicKey) {
-    Invoke-SigningPublicKeyUpload
-    return
-}
-
-if ($Version) {
-    Show-Version
-    return
-}
-
-Show-Usage

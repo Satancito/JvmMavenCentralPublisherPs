@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Changed operational command stdout to JSON for successful scalar, object, and array results; failures now return a JSON error object with exit code `1`, while `-Help` prints plain capturable help text.
+- Changed `-List` to return the complete secrets JSON instead of a formatted table.
+- Changed `-Set` to return a boolean JSON success value.
+- Changed `-Edit` to return a JSON object reporting whether the editor started and which explicit editor was requested.
+- Changed `-Init` to print interactive non-capturable progress for `env.json`, the environment id, the environment secrets JSON file, and Maven Central publisher secrets.
+- Changed `-UploadSigningPublicKey` and `-Publish` to return structured JSON results, with Gradle output captured in the publish result.
+- Changed `-Publish` to read the Gradle wrapper command from the consumer root `Project.json` file by default, keeping `-ProjectGradleCommand` as an optional override.
+- Reworked the English and Spanish README files to follow the `DevSecretsManagerPs` documentation style and make the consumer install order explicit: `DevSecretsManagerPs` first, then `JvmMavenCentralPublisherPs`.
+- Added Spanish release and usage documentation files and aligned `Version.MD` with the bilingual release workflow used by `DevSecretsManagerPs`.
+- Clarified `Version.MD` release ordering: determine scope and version, create staged technical Conventional Commits, make the final version bump commit, then tag and push.
+
 ## 1.0.0
 
 - Fixed file reads to avoid `Get-Content -Raw`, improving compatibility with environments where that parameter is unavailable.
