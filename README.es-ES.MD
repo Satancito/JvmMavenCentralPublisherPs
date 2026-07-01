@@ -34,6 +34,8 @@ Los comandos que leen o mutan secretos delegan el almacenamiento a `DevSecretsMa
 
 Los comandos con resultados capturables escriben JSON en stdout. Los valores escalares se emiten como escalares JSON validos: booleanos como `true` o `false`, strings como `"value"`, null como `null`, y strings vacios como `""`. Los fallos escriben un objeto JSON de error y salen con codigo `1`. `-Help` imprime ayuda como texto plano para que se pueda capturar directamente. `-Init` imprime solo progreso interactivo y no produce un resultado capturable.
 
+Esta herramienta lee los secretos guardados usando el contrato actual de `DevSecretsManagerPs`: `SecretsManager.ps1 -List` retorna el JSON crudo de secrets.
+
 ## Instalar En Un Proyecto Consumidor Con ToolsManagerPs
 
 Los proyectos consumidores pueden instalar este repositorio como herramienta usando `ToolsManagerPs`.
@@ -207,7 +209,7 @@ Imprime progreso interactivo de `env.json`, el environment id, el archivo JSON d
 .\MavenCentralPublisher.ps1 -List
 ```
 
-Retorna el JSON completo de secrets despues de validar y reparar los valores del publicador Maven Central.
+Retorna JSON capturable solo con las propiedades de secrets del publicador Maven Central que maneja esta herramienta, despues de validar y reparar los valores del publicador Maven Central.
 
 Este comando lee secretos locales. No lo ejecutes en logs o terminales compartidas donde los valores puedan exponerse.
 

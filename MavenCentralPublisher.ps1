@@ -138,7 +138,7 @@ Modes:
     Prints initialization progress for env.json, guid.json, environment id, and Maven Central secret states.
 
   -List
-    Returns the complete secrets JSON after validation and repair.
+    Returns JSON with only the Maven Central publisher secrets handled by this tool.
 
   -Edit
     Opens the DevSecretsManagerPs secrets file in an editor.
@@ -308,7 +308,7 @@ function ConvertFrom-JsonLines {
 }
 
 function Get-SecretsJson {
-    $jsonLines = Invoke-SecretsManager -Parameters @{ Json = $true }
+    $jsonLines = Invoke-SecretsManager -Parameters @{ List = $true }
     $json = ($jsonLines | Out-String).Trim()
 
     if ([string]::IsNullOrWhiteSpace($json)) {
@@ -419,7 +419,14 @@ function Get-SecretsManagerEnvironmentStateBeforeInit {
 
 function Show-MavenCentralSecrets {
     Repair-MavenCentralSecrets | Out-Null
-    return Get-SecretsJson
+    $secrets = Get-SecretsJson
+    $mavenCentralSecrets = [ordered]@{}
+
+    foreach ($secretName in $RequiredSecretNames) {
+        $mavenCentralSecrets[$secretName] = if ($secrets.Contains($secretName)) { $secrets[$secretName] } else { $null }
+    }
+
+    return $mavenCentralSecrets
 }
 
 function Edit-MavenCentralSecrets {

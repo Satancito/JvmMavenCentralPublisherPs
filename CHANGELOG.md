@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed secret listing integration to use the current `DevSecretsManagerPs` `-List` JSON contract instead of the removed `-Json` parameter.
+- Changed `-List` to return only Maven Central publisher secret properties instead of every value stored by `DevSecretsManagerPs`.
+
 ## 2.0.0
 
 - Changed operational command stdout to JSON for successful scalar, object, and array results; failures now return a JSON error object with exit code `1`, while `-Help` prints plain capturable help text.

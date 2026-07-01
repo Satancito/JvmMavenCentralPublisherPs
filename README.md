@@ -34,6 +34,8 @@ Commands that read or mutate secrets delegate storage to `DevSecretsManagerPs`.
 
 Commands with capturable results write JSON to stdout. Scalar values are emitted as valid JSON scalars: booleans as `true` or `false`, strings as `"value"`, null as `null`, and empty strings as `""`. Command failures write a JSON error object and exit with code `1`. `-Help` prints plain help text so it can be captured directly. `-Init` prints interactive progress only and does not produce a capturable result.
 
+This tool reads stored secrets through the current `DevSecretsManagerPs` contract: `SecretsManager.ps1 -List` returns the raw secrets JSON.
+
 ## Install In A Consumer Project With ToolsManagerPs
 
 Consumer projects can install this repository as a tool by using `ToolsManagerPs`.
@@ -207,7 +209,7 @@ Prints interactive progress for `env.json`, the environment id, the environment 
 .\MavenCentralPublisher.ps1 -List
 ```
 
-Returns the complete secrets JSON after validating and repairing Maven Central publisher values.
+Returns capturable JSON with only the Maven Central publisher secret properties handled by this tool, after validating and repairing Maven Central publisher values.
 
 This command reads local secrets. Do not run it in logs or shared terminals where secret values could be exposed.
 
