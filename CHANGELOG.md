@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Changed `-Edit` to print launched editor information with non-capturable output and return no pipeline value.
+- Added `-Init` copying for `publish.gradle.kts` from the tool directory to the consumer project root resolved as `../..` from `MavenCentralPublisher.ps1`, with automatic staging and committing of that copied file in the consumer Git repository when it changes.
+
 ## 2.0.1
 
 - Fixed secret listing integration to use the current `DevSecretsManagerPs` `-List` JSON contract instead of the removed `-Json` parameter.

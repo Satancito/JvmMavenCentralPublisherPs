@@ -135,6 +135,8 @@ Modes:
       SONATYPE_MAVEN_CENTRAL_PASSWORD
       SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE
       SONATYPE_MAVEN_CENTRAL_USERNAME
+    Copies publish.gradle.kts from the tool directory to the consumer project root resolved as ../.. from this script when it is missing or different.
+    When publish.gradle.kts is copied, stages and commits only that file in the consumer project Git repository.
     Prints initialization progress for env.json, guid.json, environment id, and Maven Central secret states.
 
   -List
@@ -144,6 +146,7 @@ Modes:
     Opens the DevSecretsManagerPs secrets file in an editor.
     Uses the default editor from SecretsManager.ps1 unless -Editor is provided.
     The GPG key server upload URLs value is validated and repaired before opening.
+    Prints the launched editor information with non-capturable output and returns no pipeline value.
 
     Examples:
       .\MavenCentralPublisher.ps1 -Edit
@@ -433,17 +436,15 @@ function Edit-MavenCentralSecrets {
     Repair-MavenCentralSecrets | Out-Null
 
     $editParameters = @{ Edit = $true }
-    $startedEditor = $null
     if (-not [string]::IsNullOrWhiteSpace($Editor)) {
         $editParameters["Editor"] = $Editor
-        $startedEditor = $Editor
+        Write-Host "Launching editor: $Editor"
+    }
+    else {
+        Write-Host "Launching default editor from DevSecretsManagerPs."
     }
 
     Invoke-SecretsManager -Parameters $editParameters | Out-Null
-    return [ordered]@{
-        Started = $true
-        Editor = $startedEditor
-    }
 }
 
 function Set-ConfiguredSecret {
@@ -725,6 +726,102 @@ function Get-ScriptDirectory {
 function Get-ConsumerProjectRoot {
     $scriptDirectory = Get-ScriptDirectory
     return [System.IO.Path]::GetFullPath((Join-Path -Path $scriptDirectory -ChildPath "..\.."))
+}
+
+function Copy-PublishGradleScriptToConsumerRoot {
+    $scriptDirectory = Get-ScriptDirectory
+    $sourcePath = [System.IO.Path]::GetFullPath((Join-Path -Path $scriptDirectory -ChildPath "publish.gradle.kts"))
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+        throw "publish.gradle.kts was not found next to MavenCentralPublisher.ps1: $sourcePath"
+    }
+
+    $consumerRoot = Get-ConsumerProjectRoot
+    if (-not (Test-Path -LiteralPath $consumerRoot -PathType Container)) {
+        throw "Consumer project root was not found: $consumerRoot"
+    }
+
+    $destinationPath = [System.IO.Path]::GetFullPath((Join-Path -Path $consumerRoot -ChildPath "publish.gradle.kts"))
+    $status = "Created"
+
+    if (Test-Path -LiteralPath $destinationPath -PathType Leaf) {
+        $sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+        $destinationHash = (Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
+        if ($sourceHash -eq $destinationHash) {
+            $status = "Existing"
+        }
+        else {
+            $status = "Updated"
+        }
+    }
+
+    if ($status -ne "Existing") {
+        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+    }
+
+    return [PSCustomObject]@{
+        Source = $sourcePath
+        Destination = $destinationPath
+        Status = $status
+        ConsumerRoot = $consumerRoot
+    }
+}
+
+function Invoke-PublishGradleScriptGitCommit {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$CopyState
+    )
+
+    if ($CopyState.Status -eq "Existing") {
+        return [PSCustomObject]@{
+            Staged = $false
+            Committed = $false
+            Commit = $null
+            Message = "publish.gradle.kts was unchanged."
+        }
+    }
+
+    $consumerRoot = [string]$CopyState.ConsumerRoot
+    $insideWorkTree = & git -C $consumerRoot rev-parse --is-inside-work-tree 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]$insideWorkTree -ne "true") {
+        throw "Consumer project root is not a Git work tree: $consumerRoot"
+    }
+
+    $gitAddOutput = & git -C $consumerRoot add -- "publish.gradle.kts" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not stage copied publish.gradle.kts in consumer project root: $consumerRoot $gitAddOutput"
+    }
+
+    $gitDiffOutput = & git -C $consumerRoot diff --cached --quiet -- "publish.gradle.kts" 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        return [PSCustomObject]@{
+            Staged = $true
+            Committed = $false
+            Commit = $null
+            Message = "publish.gradle.kts was staged but had no indexed changes."
+        }
+    }
+    elseif ($LASTEXITCODE -ne 1) {
+        throw "Could not inspect staged publish.gradle.kts changes in consumer project root: $consumerRoot $gitDiffOutput"
+    }
+
+    $commitMessage = "chore: update Maven Central publish script"
+    $gitCommitOutput = & git -C $consumerRoot commit --only -m $commitMessage -- "publish.gradle.kts" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not commit copied publish.gradle.kts in consumer project root: $consumerRoot $gitCommitOutput"
+    }
+
+    $commitHash = & git -C $consumerRoot rev-parse --short HEAD
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not read consumer project commit hash after committing publish.gradle.kts."
+    }
+
+    return [PSCustomObject]@{
+        Staged = $true
+        Committed = $true
+        Commit = [string]$commitHash
+        Message = $commitMessage
+    }
 }
 
 function Get-ConsumerProjectJsonPath {
@@ -1081,6 +1178,8 @@ function Repair-MavenCentralSecrets {
 
 function Initialize-MavenCentralSecrets {
     $environmentStateBeforeInit = Get-SecretsManagerEnvironmentStateBeforeInit
+    $publishGradleScriptState = Copy-PublishGradleScriptToConsumerRoot
+    $publishGradleGitState = Invoke-PublishGradleScriptGitCommit -CopyState $publishGradleScriptState
     $repairResult = Repair-MavenCentralSecrets
     $secretStates = [ordered]@{}
     $secretStates[$GpgKeyServersSecretName] = $repairResult.GpgKeyServersState
@@ -1114,6 +1213,25 @@ function Initialize-MavenCentralSecrets {
         Write-Host "A new environment id was created or assigned."
     }
 
+    Write-Host "publish.gradle.kts: $($publishGradleScriptState.Destination) [$($publishGradleScriptState.Status)]"
+    if ($publishGradleScriptState.Status -eq "Created") {
+        Write-Host "publish.gradle.kts was copied to the consumer project root."
+    }
+    elseif ($publishGradleScriptState.Status -eq "Updated") {
+        Write-Host "publish.gradle.kts was updated in the consumer project root."
+    }
+
+    if ($publishGradleGitState.Committed) {
+        Write-Host "publish.gradle.kts was staged and committed in the consumer project root."
+        Write-Host "Consumer project commit: $($publishGradleGitState.Commit)"
+    }
+    elseif ($publishGradleGitState.Staged) {
+        Write-Host "publish.gradle.kts was staged but no commit was created."
+    }
+    else {
+        Write-Host "publish.gradle.kts was not staged because it was unchanged."
+    }
+
     Write-Host "guid.json: $($repairResult.SecretsFilePath) [$secretsFileStatus]"
     if ($secretsFileStatus -eq "Created") {
         Write-Host "guid.json was created."
@@ -1143,7 +1261,8 @@ function Invoke-Main {
     }
 
     if ($Edit) {
-        return Edit-MavenCentralSecrets
+        Edit-MavenCentralSecrets
+        return
     }
 
     if ($Set) {
@@ -1173,6 +1292,10 @@ try {
     }
 
     if ($Init) {
+        return
+    }
+
+    if ($Edit) {
         return
     }
 

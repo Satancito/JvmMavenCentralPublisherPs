@@ -32,7 +32,7 @@ Este script espera que `DevSecretsManagerPs` exista en el directorio hermano:
 
 Los comandos que leen o mutan secretos delegan el almacenamiento a `DevSecretsManagerPs`.
 
-Los comandos con resultados capturables escriben JSON en stdout. Los valores escalares se emiten como escalares JSON validos: booleanos como `true` o `false`, strings como `"value"`, null como `null`, y strings vacios como `""`. Los fallos escriben un objeto JSON de error y salen con codigo `1`. `-Help` imprime ayuda como texto plano para que se pueda capturar directamente. `-Init` imprime solo progreso interactivo y no produce un resultado capturable.
+Los comandos con resultados capturables escriben JSON en stdout. Los valores escalares se emiten como escalares JSON validos: booleanos como `true` o `false`, strings como `"value"`, null como `null`, y strings vacios como `""`. Los fallos escriben un objeto JSON de error y salen con codigo `1`. `-Help` imprime ayuda como texto plano para que se pueda capturar directamente. `-Init` y `-Edit` imprimen solo progreso interactivo y no producen un resultado capturable.
 
 Esta herramienta lee los secretos guardados usando el contrato actual de `DevSecretsManagerPs`: `SecretsManager.ps1 -List` retorna el JSON crudo de secrets.
 
@@ -103,7 +103,9 @@ El script reusable de publicacion Gradle es:
 publish.gradle.kts
 ```
 
-Copiar `publish.gradle.kts` en el directorio que contiene el Gradle wrapper del proyecto consumidor, y aplicarlo desde el `build.gradle.kts` consumidor:
+`-Init` copia `publish.gradle.kts` desde el directorio de la herramienta a la raiz del proyecto consumidor, resuelta como `../..` desde `MavenCentralPublisher.ps1`, solo cuando el archivo de la raiz no existe o es diferente. Cuando copia el archivo, stagea y commitea solo `publish.gradle.kts` en el repositorio Git del proyecto consumidor.
+
+Aplicarlo desde el `build.gradle.kts` consumidor:
 
 ```kotlin
 apply(from = "publish.gradle.kts")
@@ -197,11 +199,11 @@ Imprime el uso de comandos como texto plano capturable.
 .\MavenCentralPublisher.ps1 -Init
 ```
 
-Inicializa `DevSecretsManagerPs` y crea los secretos faltantes del publicador Maven Central.
+Inicializa `DevSecretsManagerPs`, copia `publish.gradle.kts` a la raiz del proyecto consumidor cuando hace falta, commitea ese archivo copiado en el repositorio Git consumidor y crea los secretos faltantes del publicador Maven Central.
 
 Tambien valida y repara `SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS`.
 
-Imprime progreso interactivo de `env.json`, el environment id, el archivo JSON de secrets del ambiente y los secrets del publicador Maven Central. No produce un resultado capturable.
+Imprime progreso interactivo de `env.json`, el environment id, el `publish.gradle.kts` copiado, el commit Git consumidor de ese archivo, el archivo JSON de secrets del ambiente y los secrets del publicador Maven Central. No produce un resultado capturable.
 
 ## List
 
@@ -224,7 +226,7 @@ Abre el archivo de secretos de `DevSecretsManagerPs` en un editor.
 
 Antes de abrir el archivo, la herramienta valida y repara `SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS`.
 
-Retorna un objeto JSON con `Started` y `Editor`. `Editor` es el valor pasado a `-Editor`, o `null` cuando se usa el editor por default de `DevSecretsManagerPs`.
+Imprime que editor se lanza usando salida no capturable y no retorna un valor por pipeline.
 
 ## Set
 
