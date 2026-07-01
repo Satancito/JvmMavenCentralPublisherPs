@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.1.0
+
 - Changed `-Edit` to print launched editor information with non-capturable output and return no pipeline value.
 - Added `-Init` copying for `publish.gradle.kts` from the tool directory to the consumer project root resolved as `../..` from `MavenCentralPublisher.ps1`, with automatic staging and committing of that copied file in the consumer Git repository when it changes.
 
