@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Changed GPG key server handling to explicitly validate the final upload URL list every time it is resolved, including non-empty HTTP/HTTPS URLs and the presence of all 3 default upload URLs.
+
 ## 2.1.0
 
 - Changed `-Edit` to print launched editor information with non-capturable output and return no pipeline value.
@@ -36,9 +38,9 @@
 
 - Added `-UploadSigningPublicKey` to upload the configured signing public key to GPG key servers with native PowerShell HTTP requests and print per-server upload results.
 - Added `-UploadSigningPublicKey -File <path>` to upload a public key directly from a file without updating secrets.
-- Changed publish-time GPG key handling to use the same HTTP upload flow and require every configured upload URL to accept the key before continuing to Gradle publish.
+- Changed publish-time GPG key handling to use the same HTTP upload flow and require at least 2 configured upload URLs to accept the key before continuing to Gradle publish.
 - Changed `SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS` values to direct upload URLs, while migrating legacy host values to their known upload URLs during repair.
-- Changed `-Publish` to require `SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY` and stop when the key cannot be uploaded to every configured upload URL.
+- Changed `-Publish` to require `SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY` and stop when the key cannot be uploaded to at least 2 configured upload URLs.
 
 ## 0.3.3
 

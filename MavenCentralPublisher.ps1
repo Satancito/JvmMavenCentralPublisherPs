@@ -88,6 +88,7 @@ $DefaultGpgKeyServers = @(
     "https://keys.openpgp.org/pks/add"
 )
 $KeyServerUploadTimeoutSeconds = 30
+$MinimumSuccessfulKeyServerUploads = 2
 
 $RequiredSecretNames = @(
     $GpgKeyServersSecretName,
@@ -188,7 +189,7 @@ Modes:
       SONATYPE_MAVEN_CENTRAL_USERNAME
     SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE defaults to user_managed when empty.
     SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS is validated and repaired as upload URLs before publishing.
-    SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY is required and must upload successfully to every configured upload URL before publishing.
+    SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY is required and must upload successfully to at least 2 configured upload URLs before publishing.
 
     Examples:
       .\MavenCentralPublisher.ps1 -Publish
@@ -200,7 +201,7 @@ Modes:
     Environment variables have priority over secrets when they are not null or empty.
     When -File is provided, that file content is used as the public key for this upload only.
     Each upload URL is attempted and reported independently.
-    The command fails when any configured upload URL does not accept the upload.
+    The command fails when fewer than 2 configured upload URLs accept the upload.
 
     Example:
       .\MavenCentralPublisher.ps1 -UploadSigningPublicKey
@@ -652,15 +653,22 @@ function Get-ResolvedGpgKeyServers {
     )
 
     $environmentValue = Get-EnvironmentConfiguredValue -Name $GpgKeyServersSecretName
+    $resolvedKeyServers = $null
     if (-not [string]::IsNullOrWhiteSpace($environmentValue)) {
-        return ConvertTo-NormalizedGpgKeyServers -Value (ConvertTo-GpgKeyServersFromText -Value $environmentValue)
+        $resolvedKeyServers = ConvertTo-NormalizedGpgKeyServers -Value (ConvertTo-GpgKeyServersFromText -Value $environmentValue)
+        Test-GpgKeyServerUploadUrls -Value $resolvedKeyServers
+        return $resolvedKeyServers
     }
 
     if (-not $Secrets.Contains($GpgKeyServersSecretName)) {
-        return ConvertTo-NormalizedGpgKeyServers -Value $null
+        $resolvedKeyServers = ConvertTo-NormalizedGpgKeyServers -Value $null
+        Test-GpgKeyServerUploadUrls -Value $resolvedKeyServers
+        return $resolvedKeyServers
     }
 
-    return ConvertTo-NormalizedGpgKeyServers -Value $Secrets[$GpgKeyServersSecretName]
+    $resolvedKeyServers = ConvertTo-NormalizedGpgKeyServers -Value $Secrets[$GpgKeyServersSecretName]
+    Test-GpgKeyServerUploadUrls -Value $resolvedKeyServers
+    return $resolvedKeyServers
 }
 
 function Resolve-JavaExecutable {
@@ -968,10 +976,11 @@ function Test-PublicKeyUploadResults {
         [object[]]$Results
     )
 
+    $uploadedResults = @($Results | Where-Object { $_.Uploaded })
     $failedResults = @($Results | Where-Object { -not $_.Uploaded })
-    if ($failedResults.Count -gt 0) {
+    if ($uploadedResults.Count -lt $MinimumSuccessfulKeyServerUploads) {
         $summary = ($failedResults | ForEach-Object { "$($_.UploadUrl): $($_.Message)" }) -join [Environment]::NewLine
-        throw "The signing public key could not be uploaded to every configured GPG key server upload URL. Failed uploads: $summary"
+        throw "The signing public key must be uploaded to at least $MinimumSuccessfulKeyServerUploads configured GPG key server upload URLs. Successful uploads: $($uploadedResults.Count). Failed uploads: $summary"
     }
 }
 
@@ -1132,6 +1141,36 @@ function ConvertTo-NormalizedGpgKeyServers {
     return $normalized.ToArray()
 }
 
+function Test-GpgKeyServerUploadUrls {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Value
+    )
+
+    if ($null -eq $Value -or $Value.Count -eq 0) {
+        throw "$GpgKeyServersSecretName must contain at least one upload URL."
+    }
+
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($server in $Value) {
+        if ([string]::IsNullOrWhiteSpace($server)) {
+            throw "$GpgKeyServersSecretName upload URLs must not be null or empty."
+        }
+
+        $uploadUrl = Resolve-GpgKeyServerUploadUrl -Value $server
+        [void]$seen.Add($uploadUrl)
+    }
+
+    $missingDefaults = @($DefaultGpgKeyServers | Where-Object {
+        -not $seen.Contains((Resolve-GpgKeyServerUploadUrl -Value $_))
+    })
+
+    if ($missingDefaults.Count -gt 0) {
+        $missingText = $missingDefaults -join ", "
+        throw "$GpgKeyServersSecretName must always include the default upload URLs. Missing: $missingText"
+    }
+}
+
 function Repair-GpgKeyServers {
     param(
         [Parameter(Mandatory = $true)]
@@ -1142,6 +1181,7 @@ function Repair-GpgKeyServers {
     $hasSecret = $secrets.Contains($GpgKeyServersSecretName)
     $currentValue = if ($hasSecret) { $secrets[$GpgKeyServersSecretName] } else { $null }
     $normalizedValue = ConvertTo-NormalizedGpgKeyServers -Value $currentValue
+    Test-GpgKeyServerUploadUrls -Value $normalizedValue
     $currentText = if ($null -eq $currentValue -or $currentValue -is [string] -or $currentValue -isnot [System.Collections.IEnumerable]) {
         $null
     }

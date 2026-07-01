@@ -179,7 +179,7 @@ La lista de URLs de subida de servidores GPG se valida y repara cuando los secre
 
 - Valores null y strings vacios se eliminan.
 - Hosts legacy se migran a URLs directas de subida.
-- Las URLs de subida por default se aseguran.
+- Las 3 URLs de subida por default siempre se aseguran.
 - El valor final debe ser un array de strings no vacio con URLs absolutas HTTP/HTTPS de subida.
 
 ## Help
@@ -285,7 +285,7 @@ El comando usa las mismas reglas de resolucion de secretos que publish: las vari
 
 Cuando se proporciona `-File`, el contenido del archivo se usa como public key solo para esa subida. No actualiza el secreto guardado.
 
-Cada URL configurada se intenta de forma independiente usando requests HTTP nativos de PowerShell. No se requiere ejecutable `gpg` ni herramienta externa de gestion de claves. El comando retorna un array JSON con resultados de subida y falla cuando alguna URL configurada no acepta la subida.
+Cada URL configurada se intenta de forma independiente usando requests HTTP nativos de PowerShell. No se requiere ejecutable `gpg` ni herramienta externa de gestion de claves. El comando retorna un array JSON con resultados de subida y falla cuando menos de 2 URLs configuradas aceptan la subida.
 
 ## Publish
 
@@ -324,7 +324,7 @@ SONATYPE_MAVEN_CENTRAL_PASSWORD
 SONATYPE_MAVEN_CENTRAL_USERNAME
 ```
 
-`SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY` es requerida para publish y debe subirse correctamente a cada URL configurada de servidores GPG antes de ejecutar Gradle.
+`SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY` es requerida para publish y debe subirse correctamente en al menos 2 URLs configuradas de servidores GPG antes de ejecutar Gradle.
 
 `SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE` usa `user_managed` por default cuando esta vacia.
 

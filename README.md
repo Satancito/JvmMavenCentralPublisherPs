@@ -179,7 +179,7 @@ The GPG key server upload URL list is validated and repaired whenever secrets ar
 
 - Null values and empty strings are removed.
 - Legacy host values are migrated to direct upload URLs.
-- The default upload URLs are ensured.
+- The three default upload URLs are always ensured.
 - The final value must be a non-empty string array of absolute HTTP/HTTPS upload URLs.
 
 ## Help
@@ -285,7 +285,7 @@ The command uses the same secret resolution rules as publish: environment variab
 
 When `-File` is provided, the file content is used as the public key for that upload only. It does not update the stored secret.
 
-Each configured upload URL is attempted independently using native PowerShell HTTP requests. No `gpg` executable or external key-management tool is required. The command returns a JSON array with upload results and fails when any configured URL does not accept the upload.
+Each configured upload URL is attempted independently using native PowerShell HTTP requests. No `gpg` executable or external key-management tool is required. The command returns a JSON array with upload results and fails when fewer than 2 configured upload URLs accept the upload.
 
 ## Publish
 
@@ -324,7 +324,7 @@ SONATYPE_MAVEN_CENTRAL_PASSWORD
 SONATYPE_MAVEN_CENTRAL_USERNAME
 ```
 
-`SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY` is required for publish and must upload successfully to every configured GPG key server upload URL before Gradle runs.
+`SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY` is required for publish and must upload successfully to at least 2 configured GPG key server upload URLs before Gradle runs.
 
 `SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE` defaults to `user_managed` when empty.
 
