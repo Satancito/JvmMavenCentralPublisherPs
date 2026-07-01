@@ -304,6 +304,8 @@ La herramienta usa el directorio que contiene el Gradle wrapper resuelto como di
 
 En Windows, cuando se configura `gradlew`, la herramienta usa automaticamente `gradlew.bat` del mismo directorio y lo ejecuta mediante `cmd.exe /d /c call`. El proceso se espera explicitamente antes de retornar el JSON final. Esto evita que una ejecucion por agentes trate el publish como completado antes de que Gradle termine.
 
+Las variables de entorno de Maven Central y Java se pasan solo al proceso hijo de Gradle. No se escriben en la sesion PowerShell actual, por lo que una ejecucion posterior puede seguir resolviendo valores desde secrets salvo que las variables ya existieran antes de iniciar la herramienta.
+
 Durante publish, la herramienta:
 
 - Valida secretos y variables de entorno.

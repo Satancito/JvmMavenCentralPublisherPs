@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed publish environment handling so Maven Central and Java variables are passed only to the Gradle child process instead of remaining in the current PowerShell session.
+
 ## 2.2.1
 
 - Changed Gradle publish execution to wait explicitly for the wrapper process, using `cmd.exe /d /c call` for `gradlew.bat` on Windows while preserving captured output in the publish JSON.

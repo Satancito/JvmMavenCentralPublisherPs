@@ -192,6 +192,7 @@ Modes:
     SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS is validated and repaired as upload URLs before publishing.
     SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY is required and must upload successfully to at least 2 configured upload URLs before publishing.
     Returns capturable JSON with Success, Command, Stage, Published, MavenCentralUploadAccepted, RequiresManualRelease, PublicKeyUpload, and Gradle fields.
+    Maven Central and Java environment variables are passed only to the Gradle child process and are not persisted in the current PowerShell session.
     On Windows, gradlew.bat is executed through cmd.exe /d /c call and the process is explicitly waited before returning JSON.
 
     Examples:
@@ -1035,7 +1036,10 @@ function Publish-MavenCentralPublicKey {
 function Invoke-GradlePublishCommand {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$ProjectGradleCommand
+        [string]$ProjectGradleCommand,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$EnvironmentVariables
     )
 
     $commandName = Split-Path -Path $ProjectGradleCommand -Leaf
@@ -1053,6 +1057,7 @@ function Invoke-GradlePublishCommand {
                 -NoNewWindow `
                 -Wait `
                 -PassThru `
+                -Environment $EnvironmentVariables `
                 -RedirectStandardOutput $stdoutPath `
                 -RedirectStandardError $stderrPath
         }
@@ -1063,6 +1068,7 @@ function Invoke-GradlePublishCommand {
                 -NoNewWindow `
                 -Wait `
                 -PassThru `
+                -Environment $EnvironmentVariables `
                 -RedirectStandardOutput $stdoutPath `
                 -RedirectStandardError $stderrPath
         }
@@ -1136,22 +1142,24 @@ function Invoke-MavenCentralPublish {
         $successfulPublicKeyUploads = @($publicKeyUploadResults | Where-Object { $_.Uploaded }).Count
 
         $publishStage = "PrepareEnvironment"
-        $env:SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS = $keyServers -join ";"
-        $env:SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE = $javaExecutable
-        $env:SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY = $signingPrivateKey
-        $env:SONATYPE_MAVEN_CENTRAL_SIGNING_PASSWORD = $signingPassword
-        $env:SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY = $signingPublicKey
-        $env:SONATYPE_MAVEN_CENTRAL_USERNAME = $sonatypeUsername
-        $env:SONATYPE_MAVEN_CENTRAL_PASSWORD = $sonatypePassword
-        $env:SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE = $publishingType
-        $env:JAVA_HOME = $javaHome
-        $env:Path = "$javaHome\bin;$env:Path"
+        $gradleEnvironment = @{
+            SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS = $keyServers -join ";"
+            SONATYPE_MAVEN_CENTRAL_JAVA_EXECUTABLE = $javaExecutable
+            SONATYPE_MAVEN_CENTRAL_SIGNING_PRIVATE_KEY = $signingPrivateKey
+            SONATYPE_MAVEN_CENTRAL_SIGNING_PASSWORD = $signingPassword
+            SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY = $signingPublicKey
+            SONATYPE_MAVEN_CENTRAL_USERNAME = $sonatypeUsername
+            SONATYPE_MAVEN_CENTRAL_PASSWORD = $sonatypePassword
+            SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE = $publishingType
+            JAVA_HOME = $javaHome
+            Path = "$javaHome\bin;$env:Path"
+        }
 
         $publishStage = "GradlePublish"
         $gradleExitCode = 0
         Push-Location -LiteralPath $resolvedProjectDirectory
         try {
-            $gradleResult = Invoke-GradlePublishCommand -ProjectGradleCommand $resolvedProjectGradleCommand
+            $gradleResult = Invoke-GradlePublishCommand -ProjectGradleCommand $resolvedProjectGradleCommand -EnvironmentVariables $gradleEnvironment
             $gradleOutput = @($gradleResult.Output)
             $gradleExitCode = $gradleResult.ExitCode
             if ($gradleExitCode -ne 0) {
