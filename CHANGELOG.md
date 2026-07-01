@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.0.0
+
 - Changed operational command stdout to JSON for successful scalar, object, and array results; failures now return a JSON error object with exit code `1`, while `-Help` prints plain capturable help text.
 - Changed `-List` to return the complete secrets JSON instead of a formatted table.
 - Changed `-Set` to return a boolean JSON success value.

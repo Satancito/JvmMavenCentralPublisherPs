@@ -23,7 +23,7 @@ Ambos README son parte de este repositorio y deben mantenerse alineados cuando c
 La version del script esta almacenada en `MavenCentralPublisher.ps1`:
 
 ```powershell
-$ScriptVersion = "1.0.0"
+$ScriptVersion = "2.0.0"
 ```
 
 El comando de version debe retornar este valor:
@@ -35,7 +35,7 @@ El comando de version debe retornar este valor:
 Forma esperada de salida:
 
 ```text
-"1.0.0"
+"2.0.0"
 ```
 
 ## Decidir La Siguiente Version

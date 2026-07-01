@@ -19,7 +19,7 @@ Version actual:
 Retorna:
 
 ```text
-"1.0.0"
+"2.0.0"
 ```
 
 `-Version` y `-Help` no inicializan secretos, no crean archivos y no publican artefactos.
@@ -336,7 +336,7 @@ El comando publish retorna un objeto JSON con `Published`, `GradleExitCode`, pat
 Retorna la version del script como string JSON.
 
 ```text
-"1.0.0"
+"2.0.0"
 ```
 
 ## Flujo Recomendado
