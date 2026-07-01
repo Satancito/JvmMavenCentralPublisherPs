@@ -330,7 +330,7 @@ SONATYPE_MAVEN_CENTRAL_USERNAME
 
 `SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY` is required for publish and must upload successfully to at least 2 configured GPG key server upload URLs before Gradle runs.
 
-`SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE` defaults to `user_managed` when empty.
+`SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE` is required for publish and must be `automatic` or `user_managed`. Null, empty, or invalid values fail before Gradle runs.
 
 The publish command returns a capturable JSON object. Agents should treat `Success = true`, `Published = true`, `MavenCentralUploadAccepted = true`, and process exit code `0` as a successful publish command execution.
 

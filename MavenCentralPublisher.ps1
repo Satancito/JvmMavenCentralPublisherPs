@@ -188,7 +188,7 @@ Modes:
       SONATYPE_MAVEN_CENTRAL_SIGNING_PASSWORD
       SONATYPE_MAVEN_CENTRAL_PASSWORD
       SONATYPE_MAVEN_CENTRAL_USERNAME
-    SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE defaults to user_managed when empty.
+    SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE must be automatic or user_managed. Null, empty, or invalid values fail publish.
     SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS is validated and repaired as upload URLs before publishing.
     SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY is required and must upload successfully to at least 2 configured upload URLs before publishing.
     Returns capturable JSON with Success, Command, Stage, Published, MavenCentralUploadAccepted, RequiresManualRelease, PublicKeyUpload, and Gradle fields.
@@ -1124,12 +1124,8 @@ function Invoke-MavenCentralPublish {
         $sonatypePassword = Get-RequiredResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_PASSWORD"
         $publishingType = Get-ResolvedConfiguredValue -Secrets $secrets -Name "SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE"
 
-        if ([string]::IsNullOrWhiteSpace($publishingType)) {
-            $publishingType = "user_managed"
-        }
-
-        if ($publishingType -notin @("user_managed", "automatic")) {
-            throw "SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE must be user_managed or automatic. Current value: $publishingType"
+        if ([string]::IsNullOrWhiteSpace($publishingType) -or $publishingType -notin @("user_managed", "automatic")) {
+            throw "SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE must be user_managed or automatic before publishing. Null, empty, or invalid values are not allowed. Current value: $publishingType"
         }
 
         $keyServers = @(Get-ResolvedGpgKeyServers -Secrets $secrets)
