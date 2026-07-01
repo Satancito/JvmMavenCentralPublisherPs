@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.0.0
+
 - Fixed file reads to avoid `Get-Content -Raw`, improving compatibility with environments where that parameter is unavailable.
 - Added README instructions for installing the tool and `DevSecretsManagerPs` with `ToolsManagerPs`.
 - Removed the legacy installation guide file and its installation references.

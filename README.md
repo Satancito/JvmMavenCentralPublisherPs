@@ -254,7 +254,7 @@ Prints the script version.
 Current version:
 
 ```text
-0.4.0
+1.0.0
 ```
 
 ## Gradle Publishing Script

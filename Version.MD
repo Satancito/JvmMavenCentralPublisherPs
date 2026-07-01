@@ -9,7 +9,7 @@ These instructions apply only to the `JvmMavenCentralPublisherPs` repository its
 The script version is stored in `MavenCentralPublisher.ps1`:
 
 ```powershell
-$ScriptVersion = "0.4.0"
+$ScriptVersion = "1.0.0"
 ```
 
 The version command must return this value:
@@ -21,7 +21,7 @@ The version command must return this value:
 Expected output shape:
 
 ```text
-0.4.0
+1.0.0
 ```
 
 ## Decide The Next Version
