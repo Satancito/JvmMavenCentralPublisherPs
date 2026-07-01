@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.2.1
+
 - Changed Gradle publish execution to wait explicitly for the wrapper process, using `cmd.exe /d /c call` for `gradlew.bat` on Windows while preserving captured output in the publish JSON.
 - Changed Gradle wrapper configuration to prefer the agnostic `gradlew` path on every platform, automatically resolving to `gradlew.bat` on Windows when available.
 

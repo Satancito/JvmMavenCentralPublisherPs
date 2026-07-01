@@ -77,7 +77,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
-$ScriptVersion = "2.2.0"
+$ScriptVersion = "2.2.1"
 $ProvidedParameterNames = @($PSBoundParameters.Keys)
 $IsHelpRequest = $PSCmdlet.ParameterSetName -eq "Help"
 
