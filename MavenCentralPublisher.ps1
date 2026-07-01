@@ -179,6 +179,7 @@ Modes:
     Publishes a JVM artifact to Sonatype Maven Central using Gradle.
     By default, the Gradle wrapper command is read from the Project property in the consumer root Project.json file.
     Relative Project values are resolved from the consumer project root.
+    Configure Project or -ProjectGradleCommand with the agnostic gradlew path. On Windows, gradlew.bat is used automatically when it exists next to gradlew.
     -ProjectGradleCommand can be used as an explicit override.
     Environment variables have priority over secrets when they are not null or empty.
     Every Maven Central publisher value must resolve to a non-empty value:
@@ -191,10 +192,11 @@ Modes:
     SONATYPE_MAVEN_CENTRAL_GPG_KEY_SERVERS is validated and repaired as upload URLs before publishing.
     SONATYPE_MAVEN_CENTRAL_SIGNING_PUBLIC_KEY is required and must upload successfully to at least 2 configured upload URLs before publishing.
     Returns capturable JSON with Success, Command, Stage, Published, MavenCentralUploadAccepted, RequiresManualRelease, PublicKeyUpload, and Gradle fields.
+    On Windows, gradlew.bat is executed through cmd.exe /d /c call and the process is explicitly waited before returning JSON.
 
     Examples:
       .\MavenCentralPublisher.ps1 -Publish
-      .\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand "..\MyJvmProject\gradlew.bat"
+      .\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand "..\MyJvmProject\gradlew"
       .\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand "../MyJvmProject/gradlew"
 
   -UploadSigningPublicKey
@@ -725,6 +727,10 @@ function Get-JavaHomeFromExecutable {
     return $javaHome
 }
 
+function Test-IsWindowsPlatform {
+    return [System.IO.Path]::DirectorySeparatorChar -eq "\"
+}
+
 function Resolve-ProjectGradleCommand {
     param(
         [Parameter(Mandatory = $true)]
@@ -732,13 +738,20 @@ function Resolve-ProjectGradleCommand {
     )
 
     $resolvedPath = Resolve-FullPath -Path $ProjectGradleCommand
-    if (-not (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
-        throw "Project Gradle command was not found: $resolvedPath"
-    }
-
     $commandName = Split-Path -Path $resolvedPath -Leaf
     if ($commandName -notin @("gradlew", "gradlew.bat")) {
-        throw "Project Gradle command must be gradlew or gradlew.bat. Current command: $resolvedPath"
+        throw "Project Gradle command must be gradlew. gradlew.bat is supported only as a Windows compatibility wrapper. Current command: $resolvedPath"
+    }
+
+    if ((Test-IsWindowsPlatform) -and $commandName -eq "gradlew") {
+        $windowsWrapperPath = "$resolvedPath.bat"
+        if (Test-Path -LiteralPath $windowsWrapperPath -PathType Leaf) {
+            return $windowsWrapperPath
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
+        throw "Project Gradle command was not found: $resolvedPath. Configure the agnostic gradlew path; on Windows the tool will automatically use gradlew.bat when it exists next to gradlew."
     }
 
     return $resolvedPath
@@ -866,7 +879,7 @@ function Get-ProjectGradleCommandFromProjectJson {
 
     $projectValues = Read-JsonObjectAsOrderedHashtable -Path $projectJsonPath
     if (-not $projectValues.Contains("Project")) {
-        throw "Project.json must contain a Project property with the path to gradlew or gradlew.bat: $projectJsonPath"
+        throw "Project.json must contain a Project property with the agnostic path to gradlew: $projectJsonPath"
     }
 
     $projectValue = [string]$projectValues["Project"]
@@ -1019,6 +1032,69 @@ function Publish-MavenCentralPublicKey {
     return $results
 }
 
+function Invoke-GradlePublishCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectGradleCommand
+    )
+
+    $commandName = Split-Path -Path $ProjectGradleCommand -Leaf
+    $stdoutPath = $null
+    $stderrPath = $null
+
+    try {
+        $stdoutPath = [System.IO.Path]::GetTempFileName()
+        $stderrPath = [System.IO.Path]::GetTempFileName()
+
+        if ($commandName -eq "gradlew.bat") {
+            $process = Start-Process `
+                -FilePath $env:ComSpec `
+                -ArgumentList @("/d", "/c", "call", "`"$ProjectGradleCommand`"", "publishReleaseToCentralPortal", "--stacktrace") `
+                -NoNewWindow `
+                -Wait `
+                -PassThru `
+                -RedirectStandardOutput $stdoutPath `
+                -RedirectStandardError $stderrPath
+        }
+        else {
+            $process = Start-Process `
+                -FilePath $ProjectGradleCommand `
+                -ArgumentList @("publishReleaseToCentralPortal", "--stacktrace") `
+                -NoNewWindow `
+                -Wait `
+                -PassThru `
+                -RedirectStandardOutput $stdoutPath `
+                -RedirectStandardError $stderrPath
+        }
+
+        $stdout = @(Read-TextFile -Path $stdoutPath)
+        $stderr = @(Read-TextFile -Path $stderrPath)
+        $output = @()
+
+        if ($stdout.Count -gt 0 -and -not [string]::IsNullOrEmpty($stdout[0])) {
+            $output += ($stdout -split "\r?\n")
+        }
+
+        if ($stderr.Count -gt 0 -and -not [string]::IsNullOrEmpty($stderr[0])) {
+            $output += ($stderr -split "\r?\n")
+        }
+
+        return [PSCustomObject]@{
+            ExitCode = $process.ExitCode
+            Output = @($output | Where-Object { $null -ne $_ })
+        }
+    }
+    finally {
+        if (-not [string]::IsNullOrWhiteSpace($stdoutPath)) {
+            Remove-Item -LiteralPath $stdoutPath -Force -ErrorAction SilentlyContinue
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($stderrPath)) {
+            Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Invoke-MavenCentralPublish {
     $publishStage = "Initialize"
     $gradleOutput = @()
@@ -1075,8 +1151,9 @@ function Invoke-MavenCentralPublish {
         $gradleExitCode = 0
         Push-Location -LiteralPath $resolvedProjectDirectory
         try {
-            $gradleOutput = @(& $resolvedProjectGradleCommand "publishReleaseToCentralPortal" "--stacktrace" 2>&1)
-            $gradleExitCode = $LASTEXITCODE
+            $gradleResult = Invoke-GradlePublishCommand -ProjectGradleCommand $resolvedProjectGradleCommand
+            $gradleOutput = @($gradleResult.Output)
+            $gradleExitCode = $gradleResult.ExitCode
             if ($gradleExitCode -ne 0) {
                 $gradleOutputText = ($gradleOutput | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
                 throw "Gradle publish failed with exit code $gradleExitCode. Output: $gradleOutputText"

@@ -161,11 +161,11 @@ http://pgp.mit.edu:11371/pks/add
 https://keys.openpgp.org/pks/add
 ```
 
-The consumer project root must contain `Project.json` with a `Project` property that points to `gradlew.bat` or `gradlew`:
+The consumer project root must contain `Project.json` with a `Project` property that points to the agnostic `gradlew` path:
 
 ```json
 {
-  "Project": ".\\gradlew.bat"
+  "Project": ".\\gradlew"
 }
 ```
 
@@ -291,16 +291,18 @@ Each configured upload URL is attempted independently using native PowerShell HT
 
 ```powershell
 .\MavenCentralPublisher.ps1 -Publish
-.\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand "..\MyJvmProject\gradlew.bat"
+.\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand "..\MyJvmProject\gradlew"
 ```
 
 Publishes a JVM artifact to Sonatype Maven Central through the Gradle wrapper command configured in the consumer root `Project.json` file.
 
-By default, the script reads the `Project` property from `Project.json`. Relative values are resolved from the consumer project root. The value must point directly to `gradlew.bat` on Windows or `gradlew` on Unix-like systems.
+By default, the script reads the `Project` property from `Project.json`. Relative values are resolved from the consumer project root. The value should point to the agnostic `gradlew` path on every platform.
 
-`-ProjectGradleCommand` is an optional explicit override. When provided, it must point directly to `gradlew.bat` or `gradlew`.
+`-ProjectGradleCommand` is an optional explicit override. When provided, it should point to the agnostic `gradlew` path.
 
 The tool uses the directory that contains the resolved Gradle wrapper command as the Gradle project directory.
+
+On Windows, when `gradlew` is configured, the tool automatically uses `gradlew.bat` from the same directory and executes it through `cmd.exe /d /c call`. The process is explicitly waited before the final JSON result is returned. This keeps agent execution from treating the publish as complete before the Gradle process exits.
 
 During publish, the tool:
 

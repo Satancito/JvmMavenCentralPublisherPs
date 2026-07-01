@@ -153,11 +153,11 @@ SONATYPE_MAVEN_CENTRAL_PUBLISHING_TYPE
 SONATYPE_MAVEN_CENTRAL_USERNAME
 ```
 
-La raiz del proyecto consumidor debe contener `Project.json` con una propiedad `Project` que apunte a `gradlew.bat` o `gradlew`:
+La raiz del proyecto consumidor debe contener `Project.json` con una propiedad `Project` que apunte al path agnostico `gradlew`:
 
 ```json
 {
-  "Project": ".\\gradlew.bat"
+  "Project": ".\\gradlew"
 }
 ```
 
@@ -291,16 +291,18 @@ Cada URL configurada se intenta de forma independiente usando requests HTTP nati
 
 ```powershell
 .\MavenCentralPublisher.ps1 -Publish
-.\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand "..\MyJvmProject\gradlew.bat"
+.\MavenCentralPublisher.ps1 -Publish -ProjectGradleCommand "..\MyJvmProject\gradlew"
 ```
 
 Publica un artefacto JVM en Sonatype Maven Central mediante el comando Gradle wrapper configurado en el archivo `Project.json` de la raiz del consumidor.
 
-Por default, el script lee la propiedad `Project` de `Project.json`. Los valores relativos se resuelven desde la raiz del proyecto consumidor. El valor debe apuntar directamente a `gradlew.bat` en Windows o `gradlew` en sistemas Unix-like.
+Por default, el script lee la propiedad `Project` de `Project.json`. Los valores relativos se resuelven desde la raiz del proyecto consumidor. El valor debe apuntar al path agnostico `gradlew` en todas las plataformas.
 
-`-ProjectGradleCommand` es un override explicito opcional. Cuando se proporciona, debe apuntar directamente a `gradlew.bat` o `gradlew`.
+`-ProjectGradleCommand` es un override explicito opcional. Cuando se proporciona, debe apuntar al path agnostico `gradlew`.
 
 La herramienta usa el directorio que contiene el Gradle wrapper resuelto como directorio del proyecto Gradle.
+
+En Windows, cuando se configura `gradlew`, la herramienta usa automaticamente `gradlew.bat` del mismo directorio y lo ejecuta mediante `cmd.exe /d /c call`. El proceso se espera explicitamente antes de retornar el JSON final. Esto evita que una ejecucion por agentes trate el publish como completado antes de que Gradle termine.
 
 Durante publish, la herramienta:
 
